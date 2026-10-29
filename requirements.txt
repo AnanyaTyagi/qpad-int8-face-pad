@@ -1,0 +1,2 @@
+# Runtime dependencies (Google Colab / any Python 3.12+ environment). Same as requirements-colab.txt.
+-r requirements-colab.txt
