@@ -34,7 +34,7 @@
 
 \title{QPAD: Calibration-Set Composition Bias in INT8\\ Face Presentation Attack Detection}
 
-\author{\IEEEauthorblockN{Ananya Tyagi \quad Vindhya}
+\author{\IEEEauthorblockN{Ananya Tyagi \quad Vindhya Channarayapatna Ravishankar}
 \IEEEauthorblockA{CS 228 Biometric Security with AI, San Jos\'e State University\\
 \textit{Nature of project:} Test whether INT8 calibration-set composition creates attack-specific\\
 regressions in face presentation attack detection.}}
@@ -124,7 +124,7 @@ directly from pixels. Processed crops are stored in verified, compressed shards 
 
 \subsection{Shortcomings and limitations}
 Protocol~II covers two printers and two displays only; subjects are few (20 test subjects), so test videos are
-clustered by subject and we resample subjects, not videos, for uncertainty. \scope{Because test attacks use
+clustered by subject; uncertainty estimates in the INT8 analysis will therefore resample subjects, not videos. \scope{Because test attacks use
 equipment unseen in training (Printer~2, Display~2), a ``print'' or ``replay'' effect is also an effect on that
 specific instrument. Each calibration set is 120 videos $\times$ 5 frames; frames of one video are correlated, so
 the effective calibration sample is closer to 120 than to 600.} Eye annotations are used as supplied. Conclusions are limited to OULU-NPU Protocol~II.

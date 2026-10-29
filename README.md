@@ -6,7 +6,7 @@
 > below are developed separately and will be added for the final submission.
 
 CS 228 Biometric Security with AI · San José State University · Prof. Amith Kamath Belman
-Team: Ananya Tyagi, Vindhya
+Team: Ananya Tyagi, Vindhya Channarayapatna Ravishankar
 
 > **Research question.** Does the composition of the post-training INT8 calibration set cause
 > attack-specific degradation (print or replay APCER) in face presentation attack detection, after every
