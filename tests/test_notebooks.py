@@ -27,8 +27,7 @@ def test_notebook_structure(path):
     src = "\n".join(c.source for c in nb.cells)
     assert nb.cells[0].cell_type == "markdown" and nb.cells[0].source.startswith("# ")
     for required in ("drive.mount(", "DRY_RUN = True", "DRY_RUN_VIDEOS_PER_CLASS = 2", "FORCE_REBUILD = False",
-                     "RANDOM_SEED = 42", "set_global_seed", "environment_info", "Expected inputs", "Expected outputs",
-                     "Before you continue"):
+                     "RANDOM_SEED = 42", "set_global_seed", "environment_info", "Expected inputs", "Expected outputs"):
         assert required in src, f"{path.name} lacks {required!r}"
     for m in re.finditer(r"/content/drive[^\s\"')]*", src):
         frag = m.group(0)

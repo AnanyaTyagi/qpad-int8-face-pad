@@ -84,7 +84,7 @@ agreement (Boulkenafet et al., FG 2017); our copy was provided by the course ins
    (or *File → Upload notebook*). Choose *Runtime → Change runtime type → GPU* for notebooks 04–05.
 3. **Run top to bottom.** Every notebook starts with `DRY_RUN = True` and processes only 2 videos per split and
    class. Dry-run outputs go to `QPAD_Project/_dry_run/`, so they can never overwrite real results.
-4. **Inspect** the "Before you continue" checklist at the end, then set `DRY_RUN = False` and re-run.
+4. **Inspect** the dry-run outputs, then set `DRY_RUN = False` and re-run.
 5. Long cells print a **pre-flight** summary (items, sources, destinations, free disk, config, seed) first.
    Everything is resumable: re-running a cell after a disconnect skips completed work.
 

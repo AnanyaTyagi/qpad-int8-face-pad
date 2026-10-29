@@ -33,7 +33,7 @@ def header(title: str, purpose: str, simple: str, inputs: list[str], outputs: li
 # {title}
 
 **QPAD — Calibration-Set Composition Bias in INT8 Face Presentation Attack Detection**
-CS 228 Biometric Security with AI · San José State University · Ananya Tyagi & Vindhya
+CS 228 Biometric Security with AI · San José State University · Ananya Tyagi & Vindhya Channarayapatna Ravishankar
 
 **Priority:** {priority}
 
@@ -149,9 +149,8 @@ print("Outputs of this run go to:", OUT.project_drive_root)
 ''')
 
 
-def footer(inspect: list[str], next_nb: str | None):
-    nxt = f"\n\n**Next notebook:** `{next_nb}`" if next_nb else ""
-    return md("## Before you continue — inspect\n\n" + "\n".join(f"- [ ] {i}" for i in inspect) + nxt)
+def footer(next_nb: str | None):
+    return md(f"**Next notebook:** `{next_nb}`" if next_nb else "This is the last notebook.")
 
 
 def notebook(name: str, cells: list) -> None:
@@ -252,13 +251,7 @@ if INVENTORY is not None:
     print("Inventory saved:", paths.manifests / "archive_inventory.json")
     print("Total uncompressed:", round(INVENTORY["discovery"]["total_uncompressed_bytes"] / 1e9, 2), "GB")
 '''),
-        footer(["All four archives exist and sizes are close to the expected values.",
-                "Video extension(s) and annotation extension(s) match `configs/dataset.yaml → discovery`.",
-                "Every video has a same-stem annotation file (`videos_with_same_stem_annotation`).",
-                "Protocol_2 list files were found (Train/Dev/Test). If not, the audit relies on the subject/PAI rule.",
-                "Each TAR contains ~1,800/1,350/1,800 videos (all PAI codes); only 2,970 belong to Protocol II.",
-                "If the layout differs from these assumptions, stop and update the config before notebook 01."],
-               "01_dataset_audit.ipynb"),
+        footer("01_dataset_audit.ipynb"),
     ]
     notebook("00_colab_setup_and_archive_inventory.ipynb", cells)
 
@@ -331,13 +324,7 @@ print("Report  :", OUT.reports / "dataset_audit.md")
 if DRY_RUN:
     print("DRY RUN: status INCOMPLETE is expected. Set DRY_RUN = False for the real audit.")
 '''),
-        footer(["Overall status is **PASS** for the full run (not INCOMPLETE/FAIL).",
-                "Counts are 360/360/360 (train), 270/270/270 (dev), 360/360/360 (test).",
-                "Subjects: train 1–20, dev 21–35, test 36–55; no leakage; no duplicates.",
-                "`official_protocol_files_agree` passed (or the protocol files were genuinely absent — record it).",
-                "Annotation frame base is consistent (all `0` or all `1`). If not, set it in `dataset.yaml`.",
-                "Every video decodes and has ≥ 20 valid annotated frames.",
-                "Record any anomaly in the report's limitations section."], "02_preprocess_oulu.ipynb"),
+        footer("02_preprocess_oulu.ipynb"),
     ]
     notebook("01_dataset_audit.ipynb", cells)
 
@@ -442,12 +429,7 @@ for s, r in RESULTS.items():
     print(f"{s}: verified={r['verified']} frames={r['n_frames']} failed={r['n_failed']} problems={r['problems']}")
 print("Next: change SPLITS_TO_PROCESS to the next split and re-run, until train, dev and test are all verified.")
 '''),
-        footer(["`verified=True` with no problems for each split.",
-                "Zero failed videos — or every failure is explained and recorded.",
-                "Max eye-placement error is ~1e-12 px (alignment geometry is exact).",
-                "The outside-frame fraction is small; large values mean the crop target is too wide.",
-                "All three splits processed before notebook 03 pixel statistics and notebook 04 training."],
-               "03_eda.ipynb"),
+        footer("03_eda.ipynb"),
     ]
     notebook("02_preprocess_oulu.ipynb", cells)
 
@@ -492,11 +474,7 @@ for name in ("class_counts.csv", "phone_session_counts.csv", "resolution_table.c
 # --- Final summary -----------------------------------------------------------------------------
 print(len(EDA["figures"]), "figures saved to", EDA["eda_dir"])
 '''),
-        footer(["Every figure has a title, labeled axes, a legend where needed and a caption.",
-                "Captions match what the figure shows (they are computed from the data, but read them).",
-                "No face images are included unless you deliberately enabled them.",
-                "Copy figure PDFs into the report with `scripts/build_report_assets.py` (notebook 05 does this)."],
-               "04_train_deeppixbis_fp32.ipynb"),
+        footer("04_train_deeppixbis_fp32.ipynb"),
     ]
     notebook("03_eda.ipynb", cells)
 
@@ -578,10 +556,7 @@ else:
 print("checkpoint:", OUT.models / BEST_NAME, "| frozen:", (OUT.models / (BEST_NAME + ".FROZEN.json")).is_file())
 print("history   :", OUT.results / "training_history.csv")
 '''),
-        footer(["Training loss decreases; development loss reaches a minimum (selected epoch).",
-                "No sign of label inversion (dev AUROC well above 0.5).",
-                "Seeds, hyperparameters and device are recorded in `training_config.json`.",
-                "Only then set `FREEZE_CHECKPOINT = True`."], "05_threshold_and_fp32_evaluation.ipynb"),
+        footer("05_threshold_and_fp32_evaluation.ipynb"),
     ]
     notebook("04_train_deeppixbis_fp32.ipynb", cells)
 
@@ -670,12 +645,7 @@ print("threshold:", res_dir / "threshold.json")
 print("metrics  :", res_dir / "metrics.json")
 print("lock     :", res_dir / "test_evaluation_lock.json")
 '''),
-        footer(["The threshold came from development scores only (`threshold.json → split = dev`).",
-                "Every rate is shown with numerator/denominator.",
-                "Error breakdown by phone/session/attack type is plausible (no single phone dominating errors).",
-                "Compare with the sanity reference; investigate large gaps before Priority 1.",
-                "Commit code, then rebuild report assets so the report carries the right Git commit."],
-               "06_export_onnx_tensorrt_validation.ipynb"),
+        footer("06_export_onnx_tensorrt_validation.ipynb"),
     ]
     notebook("05_threshold_and_fp32_evaluation.ipynb", cells)
 
