@@ -1,0 +1,90 @@
+# QPAD dataset configuration — OULU-NPU Protocol II.
+# These values are the authoritative project decisions. Do not edit silently:
+# any change must be documented in the README and the report.
+
+paths:
+  # Google Drive folder holding the four original archives (read-only for QPAD).
+  dataset_root: "/content/drive/MyDrive/QPAD_Project/OULU_NPU/raw"   # moved here from "MyDrive/dataset biometric" before the full runs (2026-10-24)
+  archives:
+    train: "Train_files-002.tar"
+    dev: "Dev_files-001.tar"
+    test: "Test_files-003.tar"
+    metadata: "OULU-NPU-20261010T032906Z-1-004.zip"
+  # Private project outputs (manifests, processed shards, models, results).
+  project_drive_root: "/content/drive/MyDrive/QPAD_Project"
+  # Temporary Colab-local scratch space (lost on disconnect).
+  local_work_root: "/content/qpad_work"
+
+# Presentation-attack-instrument code (4th filename field) -> class.
+pai_to_class:
+  1: bona_fide
+  2: print    # Printer 1
+  3: print    # Printer 2
+  4: replay   # Display 1
+  5: replay   # Display 2
+
+classes: [bona_fide, print, replay]
+
+# Filename: <phone>_<session>_<subject>_<pai>, e.g. 1_1_01_1
+filename:
+  pattern: '^(?P<phone>\d+)_(?P<session>\d+)_(?P<subject>\d+)_(?P<pai>\d+)$'
+  phones: [1, 2, 3, 4, 5, 6]
+  sessions: [1, 2, 3]
+  subjects: [1, 55]   # inclusive range
+  pai_codes: [1, 2, 3, 4, 5]
+
+protocol:
+  name: "Protocol_2"
+  # Membership rule: subject range x all phones x all sessions x listed PAI codes.
+  splits:
+    train:
+      subjects: [1, 20]
+      pai_codes: [1, 2, 4]   # bona fide + Printer 1 + Display 1
+    dev:
+      subjects: [21, 35]
+      pai_codes: [1, 2, 4]
+    test:
+      subjects: [36, 55]
+      pai_codes: [1, 3, 5]   # bona fide + Printer 2 + Display 2 (unseen equipment)
+  # Stated expected counts. The audit also derives counts from the membership
+  # rule above and fails if the two disagree.
+  expected_counts:
+    train: {bona_fide: 360, print: 360, replay: 360}
+    dev: {bona_fide: 270, print: 270, replay: 270}
+    test: {bona_fide: 360, print: 360, replay: 360}
+  expected_total: 2970
+
+discovery:
+  video_extensions: [".avi", ".mp4", ".mov", ".mkv", ".mpg", ".mpeg"]
+  annotation_extensions: [".txt", ".csv"]
+  # A .txt member whose path contains one of these tokens is treated as a protocol file.
+  protocol_path_tokens: ["protocol"]
+
+annotations:
+  # How annotation frame numbers map onto decoded frame indices:
+  # "auto" infers 0- or 1-based numbering per video and requires a consistent
+  # dataset-wide answer; set 0 or 1 explicitly after inspecting the audit report.
+  frame_index_base: "auto"
+  min_eye_distance_px: 10.0
+
+audit:
+  checkpoint_every: 25          # flush resumable progress to Drive every N videos
+  workers: 4                    # parallel video checks (I/O + ffmpeg subprocesses)
+  full_decode: true             # run a complete FFmpeg decode of every video
+  compute_checksum: false       # SHA-256 of every video (slow; optional)
+  min_valid_annotated_frames: 20
+
+# Documented data exceptions. Decided on 2026-10-23 after the Phase 1 audit and BEFORE any training,
+# threshold selection or test scoring. All 2,970 Protocol II videos are kept. The audit only accepts
+# these exact cases, and fails if a documented exception no longer matches the data.
+data_exceptions:
+  # Decoded frame indices (0-based) that may never be selected: frame 90 of 6_1_12_1 has a damaged
+  # MJPEG block ("error dc"); FFmpeg conceals it but the pixels are corrupt. 120 clean frames remain.
+  damaged_frames:
+    "6_1_12_1": [90]
+  # Videos with fewer than frames.evaluation_per_video valid eye annotations. They are scored on ALL
+  # their valid annotated frames (video score = mean over this many frames) instead of being dropped,
+  # because removing hard-to-annotate test attacks could bias APCER downwards. Not allowed in train.
+  reduced_frame_videos:
+    "3_1_54_5": 2    # test / replay: 2 of 151 frames have valid eye coordinates
+    "5_1_54_3": 19   # test / print: 19 of 126 frames have valid eye coordinates

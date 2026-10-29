@@ -1,0 +1,215 @@
+% QPAD — CS 228 Checkpoint 1 report (IEEE conference, double column).
+% Compile on Overleaf (pdfLaTeX + BibTeX). Every number comes from tables/generated_values.tex, which is
+% produced by scripts/build_report_assets.py from result files. Unmeasured values appear as
+% [INSERT MEASURED RESULT FROM ...] — never replace them by hand with invented values.
+% Scope changes since the proposal are marked with \scope{...} (blue).
+\documentclass[conference]{IEEEtran}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{balance}   % equal column heights on the last page
+
+\newcommand{\scope}[1]{\textcolor{blue}{#1}}
+% Many floats in a short two-column paper: allow more per page so they stay near their text.
+\renewcommand{\topfraction}{0.9}\renewcommand{\bottomfraction}{0.6}\renewcommand{\textfraction}{0.08}
+\renewcommand{\floatpagefraction}{0.8}\setcounter{topnumber}{3}\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
+\newcommand{\todo}[1]{\textbf{\textcolor{red}{[#1]}}}
+% Figure that compiles before the asset exists.
+\newcommand{\qpadfig}[3]{%
+  \begin{figure}[!tb]\centering
+  \IfFileExists{figures/#1.pdf}{\includegraphics[width=\columnwidth]{figures/#1.pdf}}%
+  {\fbox{\parbox{0.9\columnwidth}{\centering\vspace{1.2cm}\todo{INSERT FIGURE figures/#1.pdf FROM results/}\vspace{1.2cm}}}}
+  \caption{#2}\label{#3}\end{figure}}
+\newcommand{\qpadtable}[1]{\IfFileExists{tables/#1.tex}{\input{tables/#1.tex}}{\todo{INSERT tables/#1.tex}}}
+
+\input{tables/generated_values.tex}
+
+\begin{document}
+
+\title{QPAD: Calibration-Set Composition Bias in INT8\\ Face Presentation Attack Detection}
+
+\author{\IEEEauthorblockN{Ananya Tyagi \quad Vindhya}
+\IEEEauthorblockA{CS 228 Biometric Security with AI, San Jos\'e State University\\
+\textit{Nature of project:} Test whether INT8 calibration-set composition creates attack-specific regressions
+in face presentation attack detection.}}
+
+\maketitle
+
+\begin{abstract}
+\scope{We study whether the class mixture of the post-training INT8 calibration set changes how often a face
+presentation attack detector (DeepPixBiS) accepts print or replay attacks on OULU-NPU Protocol~II.}
+This checkpoint reports the data engineering pipeline, the dataset audit, exploratory analysis and the FP32
+baseline with a development-set operating threshold. Results are reported at commit \texttt{\QPADGitCommit}.
+\end{abstract}
+
+% =====================================================================================================
+\section{Problem Statement and Motivation}
+A face presentation attack detection (PAD) system decides whether a camera sees a live person
+(\emph{bona fide}) or a presentation attack instrument (PAI) such as a printed photograph or a video replayed on a
+screen. A missed attack is a security failure: an impostor holding a photo or a phone is accepted as the
+enrolled user. Errors are therefore reported separately as APCER (attacks accepted) and BPCER (bona fide
+presentations rejected) following ISO/IEC 30107-3~\cite{iso30107-3}.
+
+Deployed PAD models are often quantized to INT8 for speed~\cite{jacob2018quantization,migacz2017int8}.
+Post-training INT8 quantization keeps the trained weights but selects per-tensor value ranges from a small
+\emph{calibration set}. \scope{If that set over- or under-represents an attack type, the chosen ranges might clip
+exactly the activations that distinguish that attack, raising its APCER even though no weight changes.}
+
+\textbf{Research question.} \scope{Does the composition of the INT8 calibration set cause attack-specific
+degradation---in print or replay APCER---relative to an INT8 engine calibrated on the natural class mixture,
+after every engine receives its own development-set threshold?} The primary comparison is \emph{unusual-calibration
+INT8 versus natural-calibration INT8 of the same nested seed}, which isolates calibration composition from
+ordinary quantization error. A meaningful effect is pre-registered as an attack-specific APCER increase of
+5 percentage points; a null result with tight confidence intervals is an acceptable, informative outcome.
+
+% =====================================================================================================
+\section{Data Engineering}
+\subsection{Dataset origin, access and characteristics}
+\scope{We use OULU-NPU~\cite{boulkenafet2017oulu}}, a mobile face PAD database of 55 subjects recorded with the
+front cameras of six smartphones in three sessions with different illumination and background, with print and
+video-replay attacks produced by two printers and two displays~\cite{boulkenafet2017oulu}. OULU-NPU is distributed
+for research use under an end-user licence agreement; our copy was provided by the course instructor on request
+for this course project. The data are kept in private storage and are not redistributed, and no face images appear
+in this report.
+
+Our archive audit found \QPADNumVideoMembers{} video files in the three split archives, of which
+\QPADNumVideos{} belong to Protocol~II. Protocol~II videos have resolution \QPADResolutions{}
+(width\,$\times$\,height, number of videos), \QPADFrameCount{} frames, a median of \QPADFps{} frames/s and
+duration \QPADDuration{}.
+Each video has a same-name text file with per-frame eye coordinates (\texttt{frame, x1, y1, x2, y2}).
+
+\subsection{Protocol~II splits and labels}
+Filenames encode \texttt{phone\_session\_subject\_PAI}. PAI code 1 is bona fide, 2--3 print and 4--5 replay.
+Protocol~II trains and selects thresholds on Printer~1/Display~1 attacks (codes 2, 4) and tests on unseen
+Printer~2/Display~2 attacks (codes 3, 5); subjects 1--20, 21--35 and 36--55 form disjoint train, development
+and test splits (Table~\ref{tab:counts}). The development split is used only for model selection and threshold
+choice. The test split is scored only after the threshold is frozen; a lock file records the threshold's
+hash and refuses any later test evaluation with a different threshold.
+
+\begin{table}[!tb]\centering\caption{Protocol II videos per split and class (from the audit manifest).}
+\label{tab:counts}\qpadtable{class_counts}\end{table}
+
+\subsection{Schema, quality checks and cleaning}
+One manifest row per video records split, subject, phone, session, PAI code, class, frame count, resolution,
+FPS, duration, annotation statistics, decode status and file size. Overall audit status:
+\textbf{\QPADAuditStatus}. The audit verifies: the 2,970 expected videos exist with the expected split/class
+counts; the subject/PAI membership rule agrees with the official Protocol~II list files; no subject appears in
+two splits; there are no duplicate or unparseable identifiers; every video decodes completely with FFmpeg; every
+annotation file is well formed; and every video, apart from the two documented test exceptions below, has at
+least 20 valid annotated frames. Annotation rows whose
+coordinates are all zero (missing eye detections) are treated as invalid frames, not imputed.
+Videos failing at least one per-video check: \QPADNumFailed{}. All 2,970 videos are kept, with a documented
+rule fixed before any training or test scoring: one training video has a single damaged MJPEG frame, which is
+excluded from frame selection; two test attack videos have only 2 and 19 frames with valid eye coordinates and
+are scored on all of those frames instead of 20. We keep rather than drop them because removing attacks that are
+hard to annotate could make APCER look better than it is.
+
+\subsection{Preprocessing}
+For each video we select 20 evenly spaced frames among frames with valid eye annotations and save their indices.
+Using the supplied eye coordinates (no separate detector), an exact similarity transform places the two eyes at
+fixed positions of a $224\times224$ crop; frames are converted to RGB and normalized with ImageNet statistics
+at load time, identically for every backend. \scope{For calibration, five evenly spaced frames of each training
+video are saved.} No feature-reduction method such as PCA is used, because DeepPixBiS learns image features
+directly from pixels. Processed crops are stored in verified, compressed shards in private storage.
+
+\subsection{Shortcomings and limitations}
+Protocol~II covers two printers and two displays only; subjects are few (20 test subjects), so test videos are
+clustered by subject and we resample subjects, not videos, for uncertainty. \scope{Because test attacks use
+equipment unseen in training (Printer~2, Display~2), a ``print'' or ``replay'' effect is also an effect on that
+specific instrument. Each calibration set is 120 videos $\times$ 5 frames; frames of one video are correlated, so
+the effective calibration sample is closer to 120 than to 600.} Eye annotations are used as supplied. Conclusions are limited to OULU-NPU Protocol~II.
+
+% =====================================================================================================
+\section{Exploratory Data Analysis}
+Fig.~\ref{fig:balance} shows class balance: attacks outnumber bona fide videos two to one, so a single accuracy
+would hide attack-specific errors; we always report per-class rates. Fig.~\ref{fig:frames} is a univariate view
+of crop sharpness, and Fig.~\ref{fig:scatter} a bivariate view of crop brightness versus sharpness per video.
+Pixel statistics use train and development videos only.
+\qpadfig{class_balance_by_split}{Protocol~II videos per split and class (class balance).}{fig:balance}
+\qpadfig{sharpness_by_class}{Univariate: per-video sharpness (variance of Laplacian) of aligned crops by class
+(train + development).}{fig:frames}
+\qpadfig{brightness_vs_sharpness}{Bivariate: brightness versus sharpness, one point per video, coloured by
+class (train + development).}{fig:scatter}
+Within every split the three classes are exactly balanced (Table~\ref{tab:counts}), and every
+phone and session contributes the same number of videos per class, so no device or recording condition dominates.
+On the aligned crops of the 1,890 train and development videos (630 per class), attacks are brighter than bona fide
+presentations (median per-video grey level 109.7 for bona fide, 130.8 for print and 144.7 for replay), and print
+attacks are less sharp (median variance of Laplacian 2186, versus 3568 for bona fide and 2955 for replay;
+Fig.~\ref{fig:frames}), consistent with the loss of high-frequency detail when a face is printed and re-captured.
+The three classes nevertheless overlap heavily in the brightness--sharpness plane (Fig.~\ref{fig:scatter}), so
+these global image statistics cannot separate attacks on their own; the detector has to learn finer, local cues,
+which motivates a pixel-wise model.
+
+% =====================================================================================================
+\section{Baseline Implementation and Preliminary Results}
+\subsection{Model and training}
+\scope{DeepPixBiS~\cite{george2019deep}} uses the first eight blocks of an ImageNet-pretrained
+DenseNet-161~\cite{huang2017densely}, a $1\times1$ convolution with sigmoid giving a $14\times14$ realness map, and
+a linear layer giving a binary output; the loss is $0.5$ pixel-wise BCE $+\,0.5$ binary BCE. We train once on the
+training split (Adam, learning rate $10^{-4}$, weight decay $10^{-5}$, batch 32, horizontal flips), select the
+epoch with the lowest development loss, and freeze the checkpoint (SHA-256 recorded). Seeds are fixed (training
+seed 42). The frame score is the mean of the map and the video score the mean of 20 frame scores (2 and 19 for the two
+documented reduced-frame test videos). Training ran on one NVIDIA A100 GPU and stopped early after \QPADEpochsRun{}
+epochs; the selected epoch \QPADBestEpoch{} has development loss \QPADBestDevLoss{} (Fig.~\ref{fig:train}). After a
+short single-epoch spike, the development loss flattens while the training loss keeps falling, which is the point
+at which early stopping is meant to act.
+\qpadfig{training_curves}{Training and development loss per epoch; the dashed line marks the selected
+checkpoint.}{fig:train}
+
+\subsection{Threshold analysis and operating point}
+A video is bona fide when $\text{score}\ge\tau$. On development scores we enumerate all candidate thresholds,
+minimise $|\text{APCER}-\text{BPCER}|$, break ties by the lowest ACER and then the higher threshold. The selected
+$\tau=\QPADThreshold$ gives development APCER \QPADDevAPCERatThr{} and BPCER \QPADDevBPCERatThr{}.
+This EER operating point balances security and usability without using test data.
+\qpadfig{dev_threshold_curve}{Development APCER and BPCER versus threshold; the dashed line is the frozen
+operating point.}{fig:thr}
+
+\subsection{Results}
+Table~\ref{tab:fp32} reports every rate with its numerator and denominator.
+Test print APCER is \QPADTestPrintAPCER, replay APCER \QPADTestReplayAPCER, BPCER \QPADTestBPCER, ACER
+\QPADTestACER{} (worst-PAI convention: \QPADTestACERmax), EER \QPADTestEER{} and AUROC \QPADTestAUROC.
+Development performance is near perfect (APCER \QPADDevAPCERatThr, BPCER \QPADDevBPCERatThr, AUROC
+\QPADDevAUROC), whereas test performance is clearly lower because Protocol~II tests on Printer~2 and Display~2,
+which the model never saw. The drop is almost entirely in replay attacks: print APCER stays below 1\%, while
+replay APCER rises from 0/270 on development to \QPADTestReplayAPCER{} on test.
+George and Marcel report APCER 11.39\%, BPCER 0.56\% and ACER 5.97\% on Protocol~II, with the same worst-PAI APCER
+and development-EER threshold~\cite{george2019deep}. Our reproduction reaches a similar ACER (\QPADTestACERmax) with
+a lower worst-PAI APCER (\QPADTestAPCERmax) but a higher BPCER (\QPADTestBPCER). Unlike the original paper, which
+found print attacks harder than video attacks in most protocols, our errors are dominated by replay. Our recipe
+differs from theirs in ways that could explain this: we align faces with the supplied eye coordinates instead of
+MTCNN detection and SDM landmarks, we do not undersample the majority class, we use horizontal flips without colour
+jitter, and we stop early on development loss instead of training for 50 epochs. We therefore treat the published
+result as a sanity reference, not a target.
+\begin{table}[!tb]\centering\caption{FP32 DeepPixBiS at the frozen development threshold.}\label{tab:fp32}
+\resizebox{\columnwidth}{!}{\qpadtable{fp32_results}}\end{table}
+
+\subsection{Error analysis}
+Table~\ref{tab:errors} breaks test errors down by phone and session for each attack type.
+Replay attacks account for 25 of the 27 accepted attacks. These errors are concentrated on two phones,
+phone~2 (13/60) and phone~4 (8/60), while phones~3 and~6 have none, and they decrease from session~1 (14/120) to
+session~3 (3/120). Bona fide rejections are spread evenly (1--3 per phone, 2--4 per session), so no single device
+causes them. The test score distribution (Fig.~\ref{fig:testhist}) shows the cause: most attack scores lie near 0 and
+most bona fide scores near 1, but a long tail of replay scores extends past the frozen threshold. Replay on unseen
+displays is therefore the weakest point of the FP32 baseline, and the attack type for which an INT8-induced change
+in APCER has the most room to appear.
+\qpadfig{test_score_hist}{Test video scores by class with the frozen development threshold (dashed); attacks to the
+right of the threshold are accepted.}{fig:testhist}
+\begin{table*}[!t]\centering\caption{Test errors by phone (left) and by session (right) (errors/total).}
+\label{tab:errors}\qpadtable{errors_by_phone}\hspace{2.5em}\qpadtable{errors_by_session}\end{table*}
+
+\subsection{Next steps}
+\scope{Export the frozen model to ONNX and TensorRT FP32 (score tolerance $10^{-5}$ and $10^{-4}$), audit
+calibration scales, and build a six-engine INT8 pilot (natural, no-print, no-replay; two nested seeds) evaluated
+with both the reused FP32 threshold and engine-specific development thresholds, before deciding on the full
+35-engine study.}
+
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+\end{document}

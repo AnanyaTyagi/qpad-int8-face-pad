@@ -1,0 +1,18 @@
+{
+  "brightness_by_class": "Per-video mean brightness of aligned face crops (train + development videos; test excluded); class differences show cues a detector could exploit.",
+  "brightness_vs_sharpness": "Each point is one video (train + development videos; test excluded); overlap between classes indicates that simple image statistics alone cannot separate attacks from bona fide presentations.",
+  "class_balance_by_split": "Every split has equal bona fide, print and replay counts; attacks outnumber bona fide videos 1980:990, so APCER and BPCER must be reported separately rather than as a single accuracy.",
+  "contrast_by_class": "Per-video mean contrast of aligned face crops (train + development videos; test excluded).",
+  "dev_score_hist": "Distribution of development video scores; attacks to the right of the dashed threshold are accepted as bona fide (APCER errors).",
+  "dev_threshold_curve": "The operating threshold is the development-set point where APCER and BPCER are closest (ties: lower ACER, then higher threshold) and is frozen before any test evaluation.",
+  "duration_distribution": "Distribution of video durations reported by ffprobe for each class.",
+  "frame_count_distribution": "Distribution of decoded frame counts per video for every Protocol II video.",
+  "missing_failed_items": "Counts of items that failed each data-quality check; zero bars confirm the check passed for every Protocol II video.",
+  "phone_distribution": "Every phone contributes the same number of videos per class, so no single phone dominates the data.",
+  "session_distribution": "Every session contributes the same number of videos per class, so no single session dominates the data.",
+  "sharpness_by_class": "Per-video mean sharpness of aligned face crops (train + development videos; test excluded); recapture through print or screen often changes high-frequency detail.",
+  "subjects_per_split": "No subject appears in more than one split, so test performance measures generalization to unseen people.",
+  "test_roc": "ROC curves separate print and replay attacks from bona fide presentations; curves closer to the top-left corner indicate better separation.",
+  "test_score_hist": "Distribution of test video scores; attacks to the right of the dashed threshold are accepted as bona fide (APCER errors).",
+  "training_curves": "The checkpoint with the lowest development loss is selected; the test split is never used during training or model selection."
+}

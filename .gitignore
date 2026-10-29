@@ -1,0 +1,46 @@
+# ---- Private biometric data: NEVER commit -------------------------------------------------
+data/
+raw/
+processed/
+private/
+QPAD_Project/
+QPAD_Project_local/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.npz
+*.npy
+# Annotation-like text dumps of the dataset (the repo's own .txt files are whitelisted below)
+oulu_annotations/
+# ---- Model weights and engines -------------------------------------------------------------
+*.pt
+*.pth
+*.onnx
+*.engine
+*.plan
+*.cache
+# ---- Per-frame / per-video score dumps stay on private Drive --------------------------------
+*_frame_scores.csv
+*_video_scores.csv
+# ---- Python / notebooks --------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+# ---- LaTeX build artefacts -----------------------------------------------------------------
+reports/checkpoint1/*.aux
+reports/checkpoint1/*.log
+reports/checkpoint1/*.bbl
+reports/checkpoint1/*.blg
+reports/checkpoint1/*.out
+reports/checkpoint1/*.synctex.gz
+# Kept on purpose (small, non-identifying): configs/*.yaml, reports/**/tables/*.tex,
+# reports/**/figures/*.pdf (aggregate plots only), requirements*.txt

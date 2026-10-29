@@ -1,0 +1,39 @@
+# Deterministic eye-based preprocessing. Identical for every backend
+# (PyTorch FP32, ONNX, TensorRT FP32/FP16/INT8).
+
+output_size: 224            # square crop side in pixels (DeepPixBiS input)
+color_order: RGB            # frames are converted from OpenCV BGR to RGB immediately after decoding
+
+alignment:
+  # Target eye centres in the output crop, in (x, y) pixels, for a 224x224 crop.
+  # "image_left" is the eye with the smaller x-coordinate in the image.
+  # Default follows the bob.bio.face convention used in Idiap PAD tooling:
+  #   right eye (image-left) at (W//4 - 1, H//5), left eye (image-right) at (3W//4, H//5).
+  # DEVIATION NOTE: the DeepPixBiS paper used MTCNN landmarks and its own crop;
+  # this geometry is a documented, configurable choice (see README).
+  target_image_left_eye_xy: [55.0, 44.0]
+  target_image_right_eye_xy: [168.0, 44.0]
+  interpolation: linear     # cv2.INTER_LINEAR
+  border_value: 0           # pixels outside the source frame are black
+
+frames:
+  evaluation_per_video: 20  # evenly spaced valid annotated frames (all splits)
+  training_per_video: 20    # evenly spaced valid annotated frames (train split only)
+  training_sampling: evenly_spaced
+  calibration_per_video: 5  # evenly spaced subset of the training frames (train split only)
+
+normalization:
+  # torchvision ImageNet statistics, matching the ImageNet-pretrained DenseNet-161 encoder.
+  scale: 255.0
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+storage:
+  shard_size_videos: 50     # videos per tar shard written to Drive
+  npz_compressed: true
+  # Pixel quality statistics stored per frame for EDA.
+  laplacian_ksize: 3
+
+qc:
+  show_faces: false         # face thumbnails are private; keep disabled unless explicitly needed
+  qc_videos_per_class: 2
