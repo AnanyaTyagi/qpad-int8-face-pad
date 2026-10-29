@@ -1,0 +1,37 @@
+# FP32 DeepPixBiS training. Train split only; dev used for model selection only.
+
+model:
+  name: DeepPixBiS
+  reference: "A. George and S. Marcel, Deep Pixel-wise Binary Supervision for Face PAD, ICB 2019"
+  backbone: densenet161      # first 8 children of torchvision densenet161.features
+  pretrained_imagenet: true
+  map_size: 14
+
+loss:
+  # L = beta * BCE(pixel map, label) + (1 - beta) * BCE(binary output, label)
+  beta: 0.5
+
+optimizer:
+  name: adam
+  lr: 1.0e-4
+  weight_decay: 1.0e-5
+
+schedule:
+  epochs: 30
+  scheduler: none            # constant learning rate
+  early_stopping_patience: 5 # epochs without dev-loss improvement
+  selection_metric: dev_loss # threshold-free; lower is better; ties -> earlier epoch
+
+data:
+  batch_size: 32
+  num_workers: 2
+  augmentation:
+    horizontal_flip: true
+    color_jitter: false      # optional; off by default (see README deviation notes)
+    color_jitter_strength: 0.1
+
+runtime:
+  seed: 42
+  deterministic: true        # cudnn.deterministic + torch.use_deterministic_algorithms(warn_only=True)
+  amp: false                 # optional mixed precision for speed; off for the baseline
+  checkpoint_every_epochs: 1

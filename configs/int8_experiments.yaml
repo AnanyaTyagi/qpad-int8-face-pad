@@ -1,0 +1,67 @@
+# INT8 calibration-composition experiment (Priority 1/2; not part of Checkpoint 1 critical path).
+
+calibration_budget:
+  videos: 120
+  frames_per_video: 5
+  images: 600
+
+# Pre-registered primary calibration method. Changing it requires a written justification.
+calibration_method:
+  primary: entropy               # TensorRT IInt8EntropyCalibrator2 (implicit quantization)
+  sensitivity: minmax            # planned sensitivity analysis only (IInt8MinMaxCalibrator)
+  calibration_batch_size: 20
+
+conditions:
+  natural:         {bona_fide: 40, print: 40, replay: 40}
+  class_balanced:  {bona_fide: 60, print: 30, replay: 30}
+  bona_fide_heavy: {bona_fide: 80, print: 20, replay: 20}
+  print_heavy:     {bona_fide: 40, print: 60, replay: 20}
+  replay_heavy:    {bona_fide: 40, print: 20, replay: 60}
+  no_print:        {bona_fide: 40, print: 0,  replay: 80}
+  no_replay:       {bona_fide: 40, print: 80, replay: 0}
+
+reference_condition: natural
+
+seeds:
+  full: [1, 2, 3, 4, 5]
+  pilot: [1, 2]
+
+pilot_conditions: [natural, no_print, no_replay]
+
+tensorrt:
+  # Pinned for every engine (06-10). TensorRT 11 removed IInt8EntropyCalibrator2 (implicit quantization),
+  # which the pre-registered entropy method needs; 10.16.1.11 is the last 10.x release (2026-10-28).
+  version: "10.16.1.11"
+  workspace_gb: 4
+  opt_batch: 20
+  max_batch: 64
+  min_batch: 1
+  onnx_opset: 17
+
+export_tolerances:
+  pytorch_vs_onnx_max_abs: 1.0e-5
+  onnx_vs_trt_fp32_max_abs: 1.0e-4
+
+rebuild_noise:
+  condition: natural
+  seed: 1
+  repeats: 3
+  max_metric_variation_pp: 0.5
+
+statistics:
+  meaningful_effect_pp: 5.0
+  min_seeds_exceeding: 4        # of 5, for a bias claim
+  robust_max_seeds_exceeding: 1 # fewer than two seeds exceed the effect size
+  auroc_score_shift_tolerance: 0.01
+  bootstrap_reps: 10000
+  bootstrap_seed: 20261016
+  ci_level: 0.95
+  permutation_alternative: two-sided
+  permutation_max_exact_subjects: 20
+  permutation_monte_carlo: 100000
+  alpha: 0.05
+
+latency:
+  batch_sizes: [1, 20]
+  warmup_iterations: 200
+  measured_iterations: 2000
