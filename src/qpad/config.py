@@ -102,10 +102,6 @@ class ProjectPaths:
         """Path of the ``train``/``dev``/``test``/``metadata`` archive."""
         return self.dataset_root / self.archive_names[key]
 
-    @property
-    def split_archives(self) -> dict[str, Path]:
-        return {s: self.archive(s) for s in ("train", "dev", "test")}
-
     # ---- Drive outputs ------------------------------------------------------------
     @property
     def manifests(self) -> Path:

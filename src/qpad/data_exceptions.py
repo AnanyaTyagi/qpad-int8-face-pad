@@ -42,14 +42,8 @@ class DataExceptions:
     def excluded_frames(self, video_id: str) -> set[int]:
         return set(self.damaged_frames.get(video_id, ()))
 
-    def eval_frames(self, video_id: str, default: int) -> int:
-        return self.reduced_frame_videos.get(video_id, default)
-
     def expected_eval_counts(self, default: int) -> FrameCounts:
         return FrameCounts(default, self.reduced_frame_videos)
-
-    def documented(self, video_id: str) -> bool:
-        return video_id in self.damaged_frames or video_id in self.reduced_frame_videos
 
 
 def expected_eval_counts(cfgs: Mapping[str, Any]) -> FrameCounts:
