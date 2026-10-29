@@ -88,6 +88,38 @@ def test_preprocessing_all_splits(env, repo_root):
     assert r["written"] == 0 and r["skipped_complete"] == r["n_shards"]
 
 
+def test_saved_calibration_manifest_must_match(env):
+    import copy
+
+    from qpad.experiments import build_calibration_manifest
+
+    cfgs = copy.deepcopy(env["cfgs"])
+    cfgs["int8"]["calibration_budget"] = {"videos": 3, "frames_per_video": 5, "images": 15}
+    cfgs["int8"]["conditions"] = {"natural": {"bona_fide": 1, "print": 1, "replay": 1}}
+    man, _, path = build_calibration_manifest(env["paths"], cfgs, False, [1], ["natural"])
+    assert len(man) == 15
+    build_calibration_manifest(env["paths"], cfgs, False, [1], ["natural"])   # identical rerun is accepted
+    edited = pd.read_csv(path, dtype={"video_id": str})
+    edited.loc[0, "rank_in_class"] += 7                                         # same keys, altered selection
+    edited.to_csv(path, index=False)
+    with pytest.raises(RuntimeError, match="different selection"):
+        build_calibration_manifest(env["paths"], cfgs, False, [1], ["natural"])
+    path.unlink()
+
+
+def test_dry_run_calibration_shrinks_mixtures(env):
+    """Dry-run crops hold ~2 videos per class: the 40/40/40 mixtures must shrink instead of failing."""
+    from qpad.experiments import build_calibration_manifest
+
+    man, _, path = build_calibration_manifest(env["paths"], env["cfgs"], True, [1, 2], ["natural", "no_print"])
+    counts = man.groupby(["seed", "condition", "class"])["video_id"].nunique().unstack(fill_value=0)
+    assert counts.loc[(1, "natural")].tolist() == [1, 1, 1]
+    assert counts.loc[(1, "no_print")].tolist() == [1, 0, 2]
+    assert len(man) % int(env["cfgs"]["int8"]["calibration_budget"]["frames_per_video"]) == 0
+    assert "_dry_run" in str(path)
+    path.unlink()
+
+
 def test_eda_outputs(env):
     from qpad.pipeline import run_eda
 

@@ -650,8 +650,167 @@ print("lock     :", res_dir / "test_evaluation_lock.json")
     notebook("05_threshold_and_fp32_evaluation.ipynb", cells)
 
 
+# ---------------------------------------------------------------------------------------
+# 06–07 — export validation and INT8 pilot
+# ---------------------------------------------------------------------------------------
+TRT_INSTALL = code('''
+# TensorRT is needed from here on. Its version is pinned in configs/int8_experiments.yaml: TensorRT 11
+# removed the INT8 entropy calibrator that the pre-registered method uses. Colab preinstalls TensorRT 11,
+# so the first time this cell swaps it for the pinned version and asks for ONE session restart.
+TRT_PIN = str(cfgs["int8"]["tensorrt"]["version"])
+def installed_trt():   # checked in a fresh process: an already-imported module would hide a reinstall
+    r = subprocess.run([sys.executable, "-c", "import tensorrt; print(tensorrt.__version__)"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+if IN_COLAB and installed_trt() != TRT_PIN:
+    import torch
+    cuda_major = torch.version.cuda.split(".")[0]
+    old = [p["name"] for p in json.loads(subprocess.run([sys.executable, "-m", "pip", "list", "--format=json"],
+                                                        capture_output=True, text=True, check=True).stdout)
+           if p["name"].lower().replace("_", "-").startswith("tensorrt")]
+    if old:
+        subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", *old], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", f"tensorrt-cu{cuda_major}=={TRT_PIN}"], check=True)
+    if installed_trt() != TRT_PIN:
+        raise RuntimeError(f"installing TensorRT {TRT_PIN} failed (found {installed_trt()})")
+    if "tensorrt" in sys.modules:
+        raise RuntimeError(f"TensorRT {TRT_PIN} is now installed. Runtime -> Restart session, then Run all again "
+                           "(needed once per runtime; the old version is still loaded in this session).")
+try:
+    import tensorrt as trt
+except ImportError:
+    trt = None
+print("TensorRT:", getattr(trt, "__version__", None))
+if trt is not None and trt.__version__ != TRT_PIN:
+    raise RuntimeError(f"TensorRT {trt.__version__} is loaded but {TRT_PIN} is pinned: restart the session.")
+from qpad.tensorrt_utils import hardware_fingerprint
+HW = hardware_fingerprint(); print(HW)
+''')
+
+
+def nb06():
+    cells = [header(
+        "06 · Export validation: PyTorch → ONNX → TensorRT FP32",
+        "Show that the exported graphs compute the same scores as PyTorch on the same saved frames, before any INT8 work.",
+        "If the FP32 export already changed the scores, we could not tell export bugs from quantization effects. "
+        "So we compare PyTorch, ONNX Runtime and TensorRT FP32 (with TF32 disabled) frame by frame.",
+        ["Frozen checkpoint; processed dev evaluation frames."],
+        ["`QPAD_Project/models/deeppixbis_fp32.onnx`", "`QPAD_Project/engines/fp32_tf32off.engine` (+ `.json`)",
+         "`QPAD_Project/results/export/equivalence.json`, `failing_samples.csv`, per-backend frame scores"],
+        "1 (after Checkpoint 1 baseline is validated)")]
+    cells += setup("nb06", '''DRY_RUN_VIDEOS = 4      # dry run: frames of the first 4 dev videos
+RUN_TENSORRT = True     # requires a CUDA GPU and TensorRT''')
+    cells += [TRT_INSTALL, code('''
+import torch
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+run_trt = RUN_TENSORRT and trt is not None and torch.cuda.is_available()
+from qpad.experiments import export_validation, EquivalenceError
+REPORT = export_validation(paths, cfgs, DRY_RUN, DEVICE, DRY_RUN_VIDEOS if DRY_RUN else None, run_trt,
+                           tqdm_progress("scoring"))
+print(json.dumps({k: REPORT[k] for k in ("n_frames", "n_videos", "pytorch_vs_onnx", "onnx_vs_trt_fp32", "passed")},
+                 indent=1, default=str)[:4000])
+'''), code('''
+# STOP rule: never continue to INT8 if equivalence failed.
+if not REPORT["passed"]:
+    raise EquivalenceError("Export equivalence FAILED or TensorRT was not run. Inspect preprocessing, output tensor "
+                           "(pixel_map), eval mode, ONNX operators and TensorRT flags. See failing_samples.csv.")
+print("Equivalence PASSED: PyTorch vs ONNX <= 1e-5 and ONNX vs TensorRT FP32 (TF32 off) <= 1e-4.")
+'''), footer("07_int8_calibration_pilot.ipynb")]
+    notebook("06_export_onnx_tensorrt_validation.ipynb", cells)
+
+
+def nb07():
+    cells = [header(
+        "07 · INT8 calibration pilot (6 engines)",
+        "Build natural / no-print / no-replay INT8 engines for seeds 1 and 2 from the same frozen ONNX graph, audit "
+        "their quantization scales, and evaluate both threshold policies.",
+        "INT8 stores activations with 256 levels; calibration picks the range each layer uses by looking at 600 "
+        "training images. We change only *which* images (the class mixture) and see whether the per-layer ranges "
+        "and the attack-specific errors move. No weights are trained here.",
+        ["Passed `equivalence.json`; ONNX model; processed train calibration frames; dev/test evaluation frames; "
+         "FP32 `threshold.json`."],
+        ["`QPAD_Project/results/int8/calibration_manifest.csv` (saved before any engine)",
+         "`QPAD_Project/engines/int8_entropy_<condition>_s<seed>/` (engine, cache, scales, logs, metadata)",
+         "`QPAD_Project/results/int8/<tag>/` (scores, thresholds, metrics)", "`pilot_summary.csv`"],
+        "1")]
+    cells += setup("nb07", '''DRY_RUN_EVAL_VIDEOS_PER_CLASS = 3   # dry run: evaluate on 3 videos/class/split, 1 engine
+CONTINUE_FULL_EXPERIMENT = False    # decision after inspecting this pilot; see the summary cell''')
+    cells += [TRT_INSTALL, code('''
+icfg = cfgs["int8"]
+METHOD = icfg["calibration_method"]["primary"]   # pre-registered: entropy
+SEEDS = icfg["seeds"]["pilot"][:1] if DRY_RUN else icfg["seeds"]["pilot"]
+CONDS = ["natural"] if DRY_RUN else icfg["pilot_conditions"]
+print("method:", METHOD, "| seeds:", SEEDS, "| conditions:", CONDS)
+if not __import__("torch").cuda.is_available():
+    raise RuntimeError("INT8 TensorRT engines need a CUDA GPU runtime.")
+from qpad.experiments import build_calibration_manifest
+CAL, CAL_STORE, CAL_PATH = build_calibration_manifest(paths, cfgs, DRY_RUN, SEEDS, CONDS)
+print("calibration manifest saved BEFORE building engines:", CAL_PATH)
+display(CAL.groupby(["seed", "condition", "class"]).size().unstack())
+'''), code('''
+import json, pandas as pd
+from qpad.datasets import materialize
+from qpad.experiments import (balanced_subset, build_int8_engine, calibration_array, engine_is_complete,
+                              engine_tag, evaluate_backend)
+from qpad.pipeline import processed_split_dir, find_input
+from qpad.tensorrt_utils import TrtRunner
+norm = cfgs["preprocessing"]["normalization"]
+from qpad.data_exceptions import expected_eval_counts; nfr = expected_eval_counts(cfgs)
+n_eval = DRY_RUN_EVAL_VIDEOS_PER_CLASS if DRY_RUN else None
+DEV = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "dev"), "dev", "eval", OUT.local_cache), n_eval)
+TEST = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "test"), "test", "eval", OUT.local_cache), n_eval)
+FP32_THR = json.loads(find_input(paths, DRY_RUN, "results", "fp32/threshold.json").read_text())["threshold"]
+preflight("INT8 pilot engines", len(SEEDS) * len(CONDS), [OUT.models / "deeppixbis_fp32.onnx", CAL_PATH],
+          [OUT.engines, OUT.results / "int8"], LOCAL_WORK_ROOT, {"method": METHOD, **icfg["tensorrt"]}, SEEDS, DRY_RUN,
+          "~2-5 min per engine build + scoring")
+'''), code('''
+PILOT = {}
+for seed in SEEDS:
+    for cond in CONDS:
+        tag = engine_tag(METHOD, cond, seed)
+        edir, rdir = OUT.engines / tag, OUT.results / "int8" / tag
+        if engine_is_complete(edir, rdir) and not FORCE_REBUILD:
+            print("verified, skipping", tag)
+        else:
+            imgs = calibration_array(CAL_STORE, CAL, seed, cond, norm)
+            meta = build_int8_engine(paths, cfgs, DRY_RUN, imgs, tag, METHOD)
+            evaluate_backend(TrtRunner(edir / "engine.plan"), DEV, TEST, norm, FP32_THR, rdir, nfr,
+                             int(icfg["tensorrt"]["opt_batch"]))
+        PILOT[tag] = json.loads((rdir / "metrics.json").read_text())
+        print(tag, "policy B print", PILOT[tag]["policy_B"]["print_apcer"]["text"],
+              "replay", PILOT[tag]["policy_B"]["replay_apcer"]["text"])
+'''), md("## Calibration-range audit\nIf scales are nearly identical across conditions, large performance "
+         "differences are unlikely. Compare each engine with natural of the same seed."), code('''
+from qpad.calibration import compare_scales, scale_summary
+scales = {}
+for tag in PILOT:
+    s = pd.read_csv(OUT.engines / tag / "scales.csv")
+    scales[tag] = dict(zip(s.tensor, s.scale))
+rows = []
+for seed in SEEDS:
+    ref = engine_tag(METHOD, "natural", seed)
+    sub = {t: v for t, v in scales.items() if t.endswith(f"_s{seed}")}
+    if ref in sub and len(sub) > 1:
+        rows.append(scale_summary(compare_scales(sub, ref)).assign(reference=ref))
+SCALES = pd.concat(rows) if rows else pd.DataFrame()
+SCALES.to_csv(OUT.results / "int8" / "pilot_scale_audit.csv", index=False); display(SCALES)
+'''), code('''
+from qpad.metrics import metrics_rows
+summary = []
+for tag, mm in PILOT.items():
+    for pol in ("A", "B"):
+        summary.append({**metrics_rows(tag, mm[f"policy_{pol}"]), "policy": pol})
+PILOT_SUMMARY = pd.DataFrame(summary)
+PILOT_SUMMARY.to_csv(OUT.results / "int8" / "pilot_summary.csv", index=False)
+display(PILOT_SUMMARY)
+print("CONTINUE_FULL_EXPERIMENT =", CONTINUE_FULL_EXPERIMENT,
+      "-> decide Tier 2A (full 35 engines) or Tier 2B (robustness) with your professor; do not start automatically.")
+'''), footer("08_full_int8_experiment.ipynb")]
+    notebook("07_int8_calibration_pilot.ipynb", cells)
+
+
 def main() -> None:
-    for f in (nb00, nb01, nb02, nb03, nb04, nb05):
+    for f in (nb00, nb01, nb02, nb03, nb04, nb05, nb06, nb07):
         f()
     print("notebooks written to", NB_DIR)
 

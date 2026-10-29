@@ -14,9 +14,9 @@ NOTEBOOKS = sorted(NB_DIR.glob("*.ipynb"))
 ALLOWED_DRIVE = ("/content/drive/MyDrive/QPAD_Project", "/content/drive\"")
 
 
-def test_checkpoint1_notebooks_exist():
+def test_notebooks_00_to_07_exist():
     names = [p.name for p in NOTEBOOKS]
-    assert len(names) == 6 and names[0].startswith("00_") and names[-1].startswith("05_")
+    assert len(names) == 8 and names[0].startswith("00_") and names[-1].startswith("07_")
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
@@ -81,3 +81,8 @@ def test_execute_checkpoint_notebooks_dry_run(synthetic, tmp_path):
     m = json.loads((dry / "results" / "fp32" / "metrics.json").read_text())
     assert m["dry_run"] is True and m["test"]["bpcer"]["total"] == 2
     assert not (tmp_path / "drive" / "QPAD_Project" / "results" / "fp32").exists()   # full-run area untouched
+    # Notebook 06 without TensorRT: ONNX equivalence runs, then the STOP rule halts before INT8.
+    nb, err = _run(NB_DIR / "06_export_onnx_tensorrt_validation.ipynb", env, tmp_path, "EquivalenceError")
+    assert err is not None
+    eq = json.loads((dry / "results" / "export" / "equivalence.json").read_text())
+    assert eq["pytorch_vs_onnx"]["passed"] and eq["pytorch_vs_onnx"]["max_abs_diff"] <= 1e-5
