@@ -2,7 +2,7 @@
 
 > **Repository scope.** Notebooks 00–05 are the Checkpoint 1 stage (archive inventory, dataset audit,
 > preprocessing, EDA, FP32 DeepPixBiS training, threshold selection and FP32 evaluation; git tag `checkpoint1`).
-> Notebooks 06–07 are the INT8 pilot (export validation and a six-engine calibration pilot). The full INT8
+> Notebooks 06–07 are the INT8 pilot (export validation and a six-engine calibration pilot); 07b–07c are the pilot diagnostics. The full INT8
 > experiment, statistics and latency stages (08–10) will be added for the final submission.
 
 CS 228 Biometric Security with AI · San José State University · Prof. Amith Kamath Belman
@@ -28,6 +28,7 @@ than the INT8 model calibrated on the natural mixture.
 | Preprocessing (02), EDA (03), FP32 training (04), threshold + test evaluation (05) | **Measured** in Google Colab (NVIDIA A100), October 2026. All numbers are in the Checkpoint 1 report. |
 | Export validation (06) | **Measured** (Colab A100, TensorRT 10.16.1.11): PyTorch vs ONNX max frame-score difference 9.1e-7, ONNX vs TensorRT FP32 3.8e-7 on 16,200 development frames; passed. |
 | INT8 calibration pilot (07) | **Measured**: six entropy-calibrated engines (natural / no_print / no_replay × seeds 1, 2). Unusual vs natural calibration changed test print or replay APCER by at most 3 of 360 videos. |
+| Pilot diagnostics (07b, 07c) | **Measured** (Colab A100, 2026-10-30). Executed notebooks and control metrics in [`reports/int8_pilot/`](reports/int8_pilot/). 63 of 68 compute layers run in INT8; the spread between engines comes mainly from the per-engine dev-EER threshold. |
 | Full INT8 experiment, statistics, latency (08–10) | Not yet in this repository; the next step depends on the pilot decision. |
 
 **Checkpoint 1 report:** [`reports/checkpoint1/checkpoint1.pdf`](reports/checkpoint1/checkpoint1.pdf)
@@ -102,6 +103,8 @@ agreement (Boulkenafet et al., FG 2017); our copy was provided by the course ins
 | 05 | `05_threshold_and_fp32_evaluation` | 0 | yes | `results/fp32/{threshold,metrics}.json`, score CSVs, breakdowns, report assets |
 | 06 | `06_export_onnx_tensorrt_validation` | 1 | yes + TensorRT | `models/deeppixbis_fp32.onnx`, `engines/fp32_tf32off.engine`, `results/export/equivalence.json` |
 | 07 | `07_int8_calibration_pilot` | 1 | yes + TensorRT | `results/int8/calibration_manifest.csv`, 6 engines with scales, `results/int8/<engine>/metrics.json`, `pilot_summary.csv` |
+| 07b | `07b_pilot_diagnostics_saved_results` | 1 | no | calibration completeness, threshold margins, score shifts, decision flips, scale changes by block |
+| 07c | `07c_pilot_diagnostics_gpu` | 1 | yes + TensorRT | per-layer INT8/FP32 precision, rebuild noise, two positive-control engines |
 
 Gates that require a deliberate manual change: `DRY_RUN = False` (all), `FREEZE_CHECKPOINT = True` (04),
 `CONFIRM_THRESHOLD_FROZEN = True` (05). Notebooks 06–07 install the pinned TensorRT version

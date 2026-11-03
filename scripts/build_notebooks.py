@@ -805,12 +805,254 @@ PILOT_SUMMARY.to_csv(OUT.results / "int8" / "pilot_summary.csv", index=False)
 display(PILOT_SUMMARY)
 print("CONTINUE_FULL_EXPERIMENT =", CONTINUE_FULL_EXPERIMENT,
       "-> decide Tier 2A (full 35 engines) or Tier 2B (robustness) with your professor; do not start automatically.")
-'''), footer("08_full_int8_experiment.ipynb")]
+'''), footer("07b_pilot_diagnostics_saved_results.ipynb")]
     notebook("07_int8_calibration_pilot.ipynb", cells)
 
 
+def nb07b():
+    cells = [header(
+        "07b · Pilot diagnostics from the saved results (no GPU)",
+        "Explain why the six pilot engines behave alike, using only the files notebook 07 already saved.",
+        "Four questions: did every engine see its full calibration set; how many test videos sit close enough to "
+        "the threshold to change decision; how far the scores moved between engines (not only the error counts); "
+        "and in which part of the network the calibration scales changed.",
+        ["Notebook 07 outputs: `engines/int8_entropy_<condition>_s<seed>/` (`engine_meta.json`, `scales.csv`) and "
+         "`results/int8/<engine>/`; FP32 results `results/fp32/`; the ONNX model."],
+        ["`QPAD_Project/results/int8/diagnostics/` (`engine_metadata_check.csv`, `threshold_margins.csv`, "
+         "`score_shifts.csv`, `decision_flips.csv`, `scale_changes_by_tensor.csv`, `scale_changes_by_block.csv`)"],
+        "1 (pilot follow-up; reads only, no engines are built)")]
+    cells += setup("nb07b", '''DRY_RUN_SEEDS = 1   # dry run: analyse seed 1 only (outputs go to _dry_run)''')
+    cells += [code('''
+import pandas as pd
+from qpad import diagnostics as D
+from qpad.experiments import engine_tag
+from qpad.pipeline import find_input
+icfg = cfgs["int8"]
+METHOD = icfg["calibration_method"]["primary"]
+SEEDS = icfg["seeds"]["pilot"][:DRY_RUN_SEEDS] if DRY_RUN else icfg["seeds"]["pilot"]
+CONDS = icfg["pilot_conditions"]
+TAGS = {(c, s): engine_tag(METHOD, c, s) for s in SEEDS for c in CONDS}
+# Always read the real pilot and FP32 results (dry-run FP32 scores come from an untrained model);
+# DRY_RUN only limits the seeds and sends this notebook's own outputs to _dry_run.
+ENGINE_DIRS = {t: find_input(paths, False, "engines", t) for t in TAGS.values()}
+RESULT_DIRS = {t: find_input(paths, False, "results", f"int8/{t}") for t in TAGS.values()}
+FP32_DIR = find_input(paths, False, "results", "fp32")
+DIAG = OUT.results / "int8" / "diagnostics"
+DIAG.mkdir(parents=True, exist_ok=True)
+print("engines:", list(TAGS.values()))
+print("writing to:", DIAG)
+'''), md("## 1. Did every engine see its full calibration set?\n"
+         "Each engine should have received 30 batches of 20 images (600) and written one scale per calibrated "
+         "tensor. An engine with fewer batches did not see its whole calibration set."), code('''
+batches = icfg["calibration_budget"]["images"] // icfg["calibration_method"]["calibration_batch_size"]
+META = D.engine_metadata_table(ENGINE_DIRS, batches)
+META.to_csv(DIAG / "engine_metadata_check.csv", index=False)
+display(META)
+print("every engine saw its full calibration set:", bool(META["ok"].all()))
+'''), md("## 2. How many videos are close enough to the threshold to flip?\n"
+         "Only videos scoring near the threshold can change decision when INT8 shifts their score slightly. "
+         "Counts per class of test videos within 0.02, 0.05 and 0.10 of each model's own threshold (policy B)."), code('''
+fp32_videos, fp32_thr = D.read_test_scores(FP32_DIR)
+rows = [D.margin_table(fp32_videos, fp32_thr).assign(model="FP32")]
+for tag, d in RESULT_DIRS.items():
+    videos, thr = D.read_test_scores(d, "B")
+    rows.append(D.margin_table(videos, thr).assign(model=tag))
+MARGINS = pd.concat(rows, ignore_index=True)
+MARGINS = MARGINS[["model", *[c for c in MARGINS.columns if c != "model"]]]
+MARGINS.to_csv(DIAG / "threshold_margins.csv", index=False)
+display(MARGINS)
+'''), md("## 3. How far did the scores move, and which decisions flipped?\n"
+         "Continuous video-score changes are far more sensitive than error counts. Three kinds of comparison: "
+         "INT8 natural vs FP32 (effect of quantization itself), unusual vs natural of the same seed (effect of the "
+         "calibration mix) and natural seed 2 vs seed 1 (effect of the random video pick only)."), code('''
+PAIRS = []
+for s in SEEDS:
+    natural = RESULT_DIRS[TAGS[("natural", s)]]
+    PAIRS.append((f"INT8 natural s{s} vs FP32", FP32_DIR, natural))
+    PAIRS += [(f"{c} vs natural, s{s}", natural, RESULT_DIRS[TAGS[(c, s)]]) for c in CONDS if c != "natural"]
+if len(SEEDS) > 1:
+    PAIRS.append((f"natural s{SEEDS[1]} vs natural s{SEEDS[0]} (seed only)",
+                  RESULT_DIRS[TAGS[("natural", SEEDS[0])]], RESULT_DIRS[TAGS[("natural", SEEDS[1])]]))
+SHIFTS, FLIPS_B = D.compare_pairs(PAIRS, "B")
+_, FLIPS_A = D.compare_pairs(PAIRS, "A")
+FLIPS = pd.concat([FLIPS_B, FLIPS_A], ignore_index=True)
+SHIFTS.to_csv(DIAG / "score_shifts.csv", index=False)
+FLIPS.to_csv(DIAG / "decision_flips.csv", index=False)
+display(SHIFTS)
+display(FLIPS)
+'''), md("## 4. Where in the network did the calibration scales change?\n"
+         "Each calibrated tensor is located in the exported graph (encoder block, pixel-map head) and its relative "
+         "scale change against the natural engine of the same seed is summarised per block."), code('''
+ORDER = D.onnx_tensor_order(find_input(paths, False, "models", "deeppixbis_fp32.onnx"))
+parts = []
+for s in SEEDS:
+    scales = {}
+    for c in CONDS:
+        tag = TAGS[(c, s)]
+        table = pd.read_csv(ENGINE_DIRS[tag] / "scales.csv")
+        scales[tag] = dict(zip(table["tensor"], table["scale"]))
+    parts.append(D.scale_changes_by_layer(scales, TAGS[("natural", s)], ORDER))
+CHANGES = pd.concat(parts, ignore_index=True)
+BY_BLOCK = D.scale_change_by_block(CHANGES)
+CHANGES.to_csv(DIAG / "scale_changes_by_tensor.csv", index=False)
+BY_BLOCK.to_csv(DIAG / "scale_changes_by_block.csv", index=False)
+print("calibrated tensors located in the ONNX graph:", int((CHANGES["block"] != "not in ONNX graph").sum()),
+      "of", len(CHANGES))
+display(BY_BLOCK)
+display(CHANGES.sort_values("abs_rel", ascending=False).groupby("engine").head(10)
+        [["engine", "tensor", "block", "op", "depth", "abs_rel"]])
+'''), code('''
+print("Engines with their full calibration set:", f"{int(META['ok'].sum())}/{len(META)}")
+int8_margins = MARGINS[MARGINS["model"] != "FP32"]
+print("Median number of test videos within 0.05 of the threshold, per class:",
+      int8_margins.groupby("class")["within_0.05"].median().to_dict())
+mix = FLIPS_B[FLIPS_B["comparison"].str.contains("vs natural,")]
+print("Decision flips, unusual vs natural (policy B):")
+print(mix.drop(columns=["policy"]).to_string(index=False))
+print("Largest scale change per block (%):", BY_BLOCK.groupby("block")["max_change_pct"].max().round(1).to_dict())
+'''), footer("07c_pilot_diagnostics_gpu.ipynb")]
+    notebook("07b_pilot_diagnostics_saved_results.ipynb", cells)
+
+
+def nb07c():
+    cells = [header(
+        "07c · Pilot diagnostics on the GPU",
+        "Three checks that need new engines: how much of the network TensorRT actually runs in INT8, how much "
+        "results move between identical rebuilds, and whether an extreme calibration set changes results at all.",
+        "The pilot only set the INT8 flag, which allows INT8 but lets TensorRT keep any layer in FP32 when that is "
+        "faster; calibration ranges of FP32 layers are never used. We rebuild the natural seed-1 engine with "
+        "per-layer profiling (three times, which also measures rebuild noise) and build two deliberately extreme "
+        "calibration sets as positive controls: bona fide only, and a tiny set of 20 images.",
+        ["Notebook 07 outputs (pilot engine `int8_entropy_natural_s1`, calibration manifest); ONNX model and "
+         "`equivalence.json`; processed train/dev/test frames; FP32 `threshold.json`. Same GPU type and TensorRT "
+         "version as the pilot."],
+        ["`QPAD_Project/engines/diagnostics/` and `QPAD_Project/results/int8/diagnostics/` (`layer_precision_*.csv`, "
+         "`precision_summary.csv`, `rebuild_noise.json`, `control_*.csv`, `control_manifest.csv`)"],
+        "1 (pilot follow-up)")]
+    cells += setup("nb07c", '''DRY_RUN_EVAL_VIDEOS_PER_CLASS = 3   # dry run: one diagnostic engine, evaluated on 3 videos/class/split''')
+    cells += [TRT_INSTALL, code('''
+import json, torch, pandas as pd
+from qpad import diagnostics as D
+from qpad.calibration import attach_calibration_frames, compare_scales, nested_calibration_sets, scale_summary
+from qpad.data_exceptions import expected_eval_counts
+from qpad.datasets import materialize, video_index
+from qpad.experiments import (balanced_subset, build_calibration_manifest, build_int8_engine, calibration_array,
+                              engine_is_complete, engine_tag, evaluate_backend, rebuild_noise)
+from qpad.metrics import metrics_rows
+from qpad.pipeline import find_input, processed_split_dir
+from qpad.tensorrt_utils import TrtRunner, engine_layers
+if not torch.cuda.is_available():
+    raise RuntimeError("These diagnostics need a CUDA GPU runtime.")
+icfg, dcfg = cfgs["int8"], cfgs["int8"]["diagnostics"]
+METHOD = icfg["calibration_method"]["primary"]
+REF_TAG = engine_tag(METHOD, "natural", 1)
+REF_ENGINE = find_input(paths, DRY_RUN, "engines", REF_TAG)
+REF_RESULT = find_input(paths, DRY_RUN, "results", f"int8/{REF_TAG}")
+pilot_hw = json.loads((REF_ENGINE / "engine_meta.json").read_text())["hardware"]
+if (pilot_hw["gpu_name"], pilot_hw["tensorrt"]) != (HW["gpu_name"], HW["tensorrt"]):
+    raise RuntimeError(f"Pilot engines were built on {pilot_hw['gpu_name']} with TensorRT {pilot_hw['tensorrt']}, "
+                       f"this runtime has {HW['gpu_name']} with TensorRT {HW['tensorrt']}. Use the same GPU type.")
+DIAG = OUT.results / "int8" / "diagnostics"
+DIAG.mkdir(parents=True, exist_ok=True)
+print("reference pilot engine:", REF_TAG, "| writing to:", DIAG)
+'''), code('''
+norm = cfgs["preprocessing"]["normalization"]
+nfr = expected_eval_counts(cfgs)
+CAL, CAL_STORE, CAL_PATH = build_calibration_manifest(paths, cfgs, DRY_RUN, [1], ["natural"])
+n_eval = DRY_RUN_EVAL_VIDEOS_PER_CLASS if DRY_RUN else None
+DEV = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "dev"), "dev", "eval", OUT.local_cache), n_eval)
+TEST = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "test"), "test", "eval", OUT.local_cache), n_eval)
+FP32_THR = json.loads(find_input(paths, DRY_RUN, "results", "fp32/threshold.json").read_text())["threshold"]
+CONTROLS = {}
+if not DRY_RUN:
+    train_videos = video_index(CAL_STORE)
+    for name, mix in dcfg["controls"].items():
+        selection = nested_calibration_sets(train_videos, {name: mix}, [1], sum(mix.values()))
+        CONTROLS[name] = attach_calibration_frames(selection, CAL_STORE.index,
+                                                   int(icfg["calibration_budget"]["frames_per_video"]))
+    CONTROL_MANIFEST = pd.concat(CONTROLS.values(), ignore_index=True)
+    CONTROL_MANIFEST.to_csv(DIAG / "control_manifest.csv", index=False)   # saved before any control engine
+    display(CONTROL_MANIFEST.groupby(["condition", "class"]).size().unstack(fill_value=0))
+repeats = 1 if DRY_RUN else int(dcfg["rebuild_repeats"])
+JOBS = [(f"natural_s1_rebuild{r}", "natural", CAL) for r in range(repeats)]
+JOBS += [(f"control_{name}_s1", name, manifest) for name, manifest in CONTROLS.items()]
+preflight("pilot diagnostic engines", len(JOBS), [REF_ENGINE, CAL_PATH],
+          [OUT.engines / "diagnostics", DIAG], LOCAL_WORK_ROOT,
+          {"method": METHOD, "jobs": [j[0] for j in JOBS], "detailed_profile": True}, [1], DRY_RUN,
+          "~4-7 min per engine (build + scoring)")
+'''), code('''
+RUNS = {}
+for name, condition, manifest in JOBS:
+    tag = f"diagnostics/int8_{METHOD}_{name}"
+    edir, rdir = OUT.engines / tag, OUT.results / "int8" / tag
+    if engine_is_complete(edir, rdir) and not FORCE_REBUILD:
+        print("verified, skipping", tag)
+    else:
+        images = calibration_array(CAL_STORE, manifest, 1, condition, norm)
+        build_int8_engine(paths, cfgs, DRY_RUN, images, tag, METHOD, detailed_profile=True)
+        evaluate_backend(TrtRunner(edir / "engine.plan"), DEV, TEST, norm, FP32_THR, rdir, nfr,
+                         int(icfg["tensorrt"]["opt_batch"]))
+    RUNS[name] = (edir, rdir)
+    m = json.loads((rdir / "metrics.json").read_text())["policy_B"]
+    print(name, "| print", m["print_apcer"]["text"], "| replay", m["replay_apcer"]["text"], "| BPCER", m["bpcer"]["text"])
+'''), md("## 1. How much of the network runs in INT8?\n"
+         "Per-layer report of the rebuilt natural seed-1 engine. A layer counts as INT8 when its kernel reads INT8 "
+         "input. Format-conversion (Reformat) layers are listed but not counted. Fused graphs that TensorRT reports as "
+         "a single `ForeignNode` (Myelin) hide their inner layers."), code('''
+LAYERS = D.layer_precision_table(engine_layers(RUNS["natural_s1_rebuild0"][0] / "engine.plan"))
+PRECISION = D.precision_summary(LAYERS)
+LAYERS.to_csv(DIAG / "layer_precision_natural_s1.csv", index=False)
+PRECISION.to_csv(DIAG / "precision_summary.csv", index=False)
+display(PRECISION)
+display(LAYERS.groupby(["type", "precision"]).size().unstack(fill_value=0))
+print("fused ForeignNode/Myelin layers:", int(LAYERS["type"].str.contains("Foreign|Myelin", case=False).sum()))
+'''), md("## 2. Rebuild noise\n"
+         "Identical rebuilds of the natural seed-1 engine. Differences between them are chance (kernel selection), "
+         "so a calibration-mix effect must be larger than this to count."), code('''
+rebuilds = [RUNS[n] for n, _, _ in JOBS if n.startswith("natural_s1_rebuild")]
+if len(rebuilds) > 1:
+    RN = rebuild_noise([r for _, r in rebuilds], [e for e, _ in rebuilds],
+                       float(icfg["rebuild_noise"]["max_metric_variation_pp"]))
+    (DIAG / "rebuild_noise.json").write_text(json.dumps(RN, indent=2))
+    print(json.dumps(RN, indent=1))
+    SHIFT_RB, FLIPS_RB = D.compare_pairs([("pilot natural s1 vs rebuild0", REF_RESULT, rebuilds[0][1])])
+    display(SHIFT_RB)
+    display(FLIPS_RB)
+else:
+    print("dry run: one rebuild only, rebuild noise needs at least two")
+'''), md("## 3. Positive controls\n"
+         "If even these extreme calibration sets barely change the results, either the model is robust to "
+         "calibration or little of it runs in INT8 (see section 1). If they do change results, the pipeline can "
+         "detect a calibration effect and the pilot's null result is credible."), code('''
+if CONTROLS:
+    rows = [{**metrics_rows("pilot natural s1", json.loads((REF_RESULT / "metrics.json").read_text())["policy_B"])}]
+    for name in CONTROLS:
+        rdir = RUNS[f"control_{name}_s1"][1]
+        rows.append(metrics_rows(f"control {name}", json.loads((rdir / "metrics.json").read_text())["policy_B"]))
+    CONTROL_METRICS = pd.DataFrame(rows)
+    CONTROL_METRICS.to_csv(DIAG / "control_metrics.csv", index=False)
+    display(CONTROL_METRICS)
+    SHIFT_C, FLIPS_C = D.compare_pairs([(f"control {n} vs natural s1", REF_RESULT, RUNS[f"control_{n}_s1"][1])
+                                        for n in CONTROLS])
+    SHIFT_C.to_csv(DIAG / "control_score_shifts.csv", index=False)
+    FLIPS_C.to_csv(DIAG / "control_decision_flips.csv", index=False)
+    display(SHIFT_C)
+    display(FLIPS_C)
+    scales = {}
+    for tag, edir in [(REF_TAG, REF_ENGINE)] + [(f"control_{n}", RUNS[f"control_{n}_s1"][0]) for n in CONTROLS]:
+        table = pd.read_csv(edir / "scales.csv")
+        scales[tag] = dict(zip(table["tensor"], table["scale"]))
+    CONTROL_SCALES = scale_summary(compare_scales(scales, REF_TAG))
+    CONTROL_SCALES.to_csv(DIAG / "control_scale_audit.csv", index=False)
+    display(CONTROL_SCALES)
+else:
+    print("dry run: positive controls are built in the full run only")
+'''), footer("08_full_int8_experiment.ipynb")]
+    notebook("07c_pilot_diagnostics_gpu.ipynb", cells)
+
+
 def main() -> None:
-    for f in (nb00, nb01, nb02, nb03, nb04, nb05, nb06, nb07):
+    for f in (nb00, nb01, nb02, nb03, nb04, nb05, nb06, nb07, nb07b, nb07c):
         f()
     print("notebooks written to", NB_DIR)
 

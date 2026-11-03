@@ -42,6 +42,14 @@ export_tolerances:
   pytorch_vs_onnx_max_abs: 1.0e-5
   onnx_vs_trt_fp32_max_abs: 1.0e-4
 
+# Pilot diagnostics (notebook 07c): rebuilds of natural seed 1 with per-layer profiling, and two deliberately
+# extreme calibration sets for seed 1 (positive controls: can the pipeline show a calibration effect at all?).
+diagnostics:
+  rebuild_repeats: 3
+  controls:
+    bona_fide_only: {bona_fide: 120, print: 0, replay: 0}
+    tiny_natural:   {bona_fide: 2, print: 1, replay: 1}     # 4 videos x 5 frames = 20 images = one batch
+
 rebuild_noise:
   condition: natural
   seed: 1

@@ -174,15 +174,21 @@ def calibration_array(store: FrameStore, manifest: pd.DataFrame, seed: int, cond
     return to_model_input(np.asarray(store.images[idx]), norm_cfg)
 
 
+def pad_to_batch(images: np.ndarray, batch: int) -> np.ndarray:
+    """Repeat images cyclically up to a multiple of ``batch`` (dry-run calibration sets only)."""
+    n = -(-len(images) // batch) * batch
+    return images if n == len(images) else images[np.arange(n) % len(images)]
+
+
 def build_int8_engine(paths: ProjectPaths, cfgs: Mapping[str, Any], dry_run: bool, images: np.ndarray, tag: str,
-                      method: str) -> dict[str, Any]:
+                      method: str, detailed_profile: bool = False) -> dict[str, Any]:
     """Build one INT8 engine from the frozen ONNX graph and record its per-tensor scales."""
     from .calibration import make_calibrator, parse_calibration_cache
     from .tensorrt_utils import build_engine
 
     out = output_paths(paths, dry_run)
-    onnx_path = out.models / ONNX_NAME
-    eq = json.loads((out.results / "export" / "equivalence.json").read_text())
+    onnx_path = find_input(paths, dry_run, "models", ONNX_NAME)
+    eq = json.loads(find_input(paths, dry_run, "results", "export/equivalence.json").read_text())
     if not eq.get("passed"):
         raise EquivalenceError("export equivalence has not passed; INT8 engines must not be built")
     if file_sha256(onnx_path) != eq["onnx"]["sha256"]:
@@ -197,11 +203,11 @@ def build_int8_engine(paths: ProjectPaths, cfgs: Mapping[str, Any], dry_run: boo
     cache = edir / "calibration.cache"
     cache.unlink(missing_ok=True)
     batch = int(cfgs["int8"]["calibration_method"]["calibration_batch_size"])
-    if dry_run:   # the shrunken dry-run sets are a multiple of frames_per_video, not of the real batch
-        batch = int(cfgs["int8"]["calibration_budget"]["frames_per_video"])
+    if dry_run:   # TensorRT calibrates at the profile's batch size; the few dry-run images are repeated to fill it
+        images = pad_to_batch(images, batch)
     calib = make_calibrator(images, batch, cache, method)
     meta = build_engine(onnx_path, edir / "engine.plan", "int8", tf32=False, trt_cfg=cfgs["int8"]["tensorrt"],
-                        calibrator=calib, log_path=edir / "build_log.json")
+                        calibrator=calib, log_path=edir / "build_log.json", detailed_profile=detailed_profile)
     meta.update(tag=tag, method=method, n_calibration_images=int(len(images)),
                 calibration_batches_served=int(calib.batches_served), onnx_sha256=eq["onnx"]["sha256"],
                 checkpoint_sha256=eq["onnx"]["checkpoint_sha256"])

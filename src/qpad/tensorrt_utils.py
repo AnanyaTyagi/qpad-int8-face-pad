@@ -43,12 +43,13 @@ def assert_same_hardware(fingerprints: list[Mapping[str, Any]]) -> None:
 
 
 def build_engine(onnx_path: Path, engine_path: Path, precision: str, tf32: bool, trt_cfg: Mapping[str, Any],
-                 calibrator=None, log_path: Path | None = None) -> dict[str, Any]:
+                 calibrator=None, log_path: Path | None = None, detailed_profile: bool = False) -> dict[str, Any]:
     """Build a serialized engine and write ``<engine>.json`` metadata. Returns the metadata.
 
     ``precision`` is ``fp32``, ``fp16`` or ``int8``. For strict FP32 checks pass
     ``tf32=False`` (TF32 is cleared explicitly). Every other builder flag is identical
-    across precisions.
+    across precisions. ``detailed_profile`` keeps per-layer information (precision,
+    formats, tactics) in the engine so :func:`engine_layers` can report it.
     """
     trt = require_tensorrt()
     logger = trt.Logger(trt.Logger.WARNING)
@@ -73,6 +74,8 @@ def build_engine(onnx_path: Path, engine_path: Path, precision: str, tf32: bool,
         config.int8_calibrator = calibrator
     elif precision != "fp32":
         raise ValueError(f"unknown precision {precision}")
+    if detailed_profile:
+        config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
     inp = network.get_input(0)
     size = tuple(inp.shape[1:])
     profile = builder.create_optimization_profile()
@@ -91,12 +94,27 @@ def build_engine(onnx_path: Path, engine_path: Path, precision: str, tf32: bool,
     meta = {"engine": engine_path.name, "precision": precision, "tf32": tf32, "sha256": bytes_sha256(data),
             "size_bytes": len(data), "build_seconds": time.time() - t0, "onnx": str(onnx_path),
             "trt_config": dict(trt_cfg), "hardware": hardware_fingerprint(),
-            "calibrator": type(calibrator).__name__ if calibrator is not None else None}
+            "calibrator": type(calibrator).__name__ if calibrator is not None else None,
+            "detailed_profile": detailed_profile}
     write_json(engine_path.with_suffix(engine_path.suffix + ".json"), meta)
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(json.dumps(meta, indent=2, default=str))
     return meta
+
+
+def engine_layers(engine_path: Path) -> list[dict[str, Any]]:
+    """Per-layer information of an engine built with ``detailed_profile=True`` (TensorRT engine inspector)."""
+    trt = require_tensorrt()
+    runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
+    engine = runtime.deserialize_cuda_engine(Path(engine_path).read_bytes())
+    if engine is None:
+        raise RuntimeError(f"cannot deserialize {engine_path}")
+    info = json.loads(engine.create_engine_inspector().get_engine_information(trt.LayerInformationFormat.JSON))
+    layers = info.get("Layers", [])
+    if layers and not isinstance(layers[0], dict):
+        raise RuntimeError(f"{engine_path} was built without detailed profiling; rebuild with detailed_profile=True")
+    return layers
 
 
 class TrtRunner:
