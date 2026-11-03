@@ -1,0 +1,15 @@
+comparison,policy,attack_rejected_to_accepted,attack_accepted_to_rejected,bona_fide_accepted_to_rejected,bona_fide_rejected_to_accepted,n_videos
+INT8 natural s1 vs FP32,B,7,0,0,2,1080
+"no_print vs natural, s1",B,2,6,1,2,1080
+"no_replay vs natural, s1",B,5,3,2,1,1080
+INT8 natural s2 vs FP32,B,4,0,0,3,1080
+"no_print vs natural, s2",B,1,0,0,0,1080
+"no_replay vs natural, s2",B,1,3,3,0,1080
+natural s2 vs natural s1 (seed only),B,3,6,0,1,1080
+INT8 natural s1 vs FP32,A,8,0,0,2,1080
+"no_print vs natural, s1",A,3,5,1,4,1080
+"no_replay vs natural, s1",A,2,8,2,0,1080
+INT8 natural s2 vs FP32,A,5,0,0,3,1080
+"no_print vs natural, s2",A,1,2,1,0,1080
+"no_replay vs natural, s2",A,0,5,3,0,1080
+natural s2 vs natural s1 (seed only),A,3,6,0,1,1080

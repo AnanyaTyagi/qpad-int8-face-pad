@@ -1,0 +1,49 @@
+engine,block,tensors,median_change_pct,max_change_pct
+int8_entropy_no_print_s1,input,1,0.6386564197951484,0.6386564197951484
+int8_entropy_no_print_s1,conv0,1,0.0,0.0
+int8_entropy_no_print_s1,relu0,1,8.819347402910068,8.819347402910068
+int8_entropy_no_print_s1,pool0,1,8.819347402910068,8.819347402910068
+int8_entropy_no_print_s1,denseblock1,37,0.0638097752974466,49.902531416277164
+int8_entropy_no_print_s1,transition1,4,11.999171393438646,12.59080417658236
+int8_entropy_no_print_s1,denseblock2,73,0.3122583674251733,30.487330318886713
+int8_entropy_no_print_s1,transition2,4,0.0,0.0
+int8_entropy_no_print_s1,pixel-map head,1,0.5820281340722719,0.5820281340722719
+int8_entropy_no_print_s1,binary head,1,10.177189022417556,10.177189022417556
+int8_entropy_no_print_s1,other,4,2.870816851588943,5.741633703177886
+int8_entropy_no_print_s1,not in ONNX graph,4,0.0,9.561062676579061
+int8_entropy_no_print_s2,input,1,0.0,0.0
+int8_entropy_no_print_s2,conv0,1,6.015042603744609,6.015042603744609
+int8_entropy_no_print_s2,relu0,1,0.7797263226869325,0.7797263226869325
+int8_entropy_no_print_s2,pool0,1,0.7797263226869325,0.7797263226869325
+int8_entropy_no_print_s2,denseblock1,37,0.0,33.28998074400808
+int8_entropy_no_print_s2,transition1,4,3.4922772574992322,6.9845545149984645
+int8_entropy_no_print_s2,denseblock2,73,0.6176072915949236,33.89247101857713
+int8_entropy_no_print_s2,transition2,4,0.3750574652572951,16.645002343334966
+int8_entropy_no_print_s2,pixel-map head,1,0.0,0.0
+int8_entropy_no_print_s2,binary head,1,5.4453179141570915,5.4453179141570915
+int8_entropy_no_print_s2,other,4,2.870812186807105,5.74162437361421
+int8_entropy_no_print_s2,not in ONNX graph,4,0.0,3.847950420363037
+int8_entropy_no_replay_s1,input,1,2.014255994120572,2.014255994120572
+int8_entropy_no_replay_s1,conv0,1,8.322493606932909,8.322493606932909
+int8_entropy_no_replay_s1,relu0,1,0.2844958876020977,0.2844958876020977
+int8_entropy_no_replay_s1,pool0,1,0.2844958876020977,0.2844958876020977
+int8_entropy_no_replay_s1,denseblock1,37,1.1552358792361581,69.38911029261622
+int8_entropy_no_replay_s1,transition1,4,4.842614947792871,9.685229895585742
+int8_entropy_no_replay_s1,denseblock2,73,0.4514651299537248,29.976580633531334
+int8_entropy_no_replay_s1,transition2,4,0.5420020146046503,1.0840040292093005
+int8_entropy_no_replay_s1,pixel-map head,1,0.36377037053884137,0.36377037053884137
+int8_entropy_no_replay_s1,binary head,1,0.0,0.0
+int8_entropy_no_replay_s1,other,4,0.0,0.0
+int8_entropy_no_replay_s1,not in ONNX graph,4,0.0,0.0
+int8_entropy_no_replay_s2,input,1,14.596041378583513,14.596041378583513
+int8_entropy_no_replay_s2,conv0,1,0.0,0.0
+int8_entropy_no_replay_s2,relu0,1,0.0,0.0
+int8_entropy_no_replay_s2,pool0,1,0.0,0.0
+int8_entropy_no_replay_s2,denseblock1,37,0.37594177275096324,24.975618402583827
+int8_entropy_no_replay_s2,transition1,4,2.1816040643995436,4.298187393845356
+int8_entropy_no_replay_s2,denseblock2,73,0.3727863789246085,32.96702791269547
+int8_entropy_no_replay_s2,transition2,4,0.6137338788885925,0.6734022869946068
+int8_entropy_no_replay_s2,pixel-map head,1,2.3956468066025,2.3956468066025
+int8_entropy_no_replay_s2,binary head,1,3.9686219081586116,3.9686219081586116
+int8_entropy_no_replay_s2,other,4,0.0,0.0
+int8_entropy_no_replay_s2,not in ONNX graph,4,0.0,0.0

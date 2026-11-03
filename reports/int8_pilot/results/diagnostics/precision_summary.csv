@@ -1,0 +1,3 @@
+precision,layers,share_pct
+INT8,63,92.6470588235294
+FP32,5,7.352941176470588

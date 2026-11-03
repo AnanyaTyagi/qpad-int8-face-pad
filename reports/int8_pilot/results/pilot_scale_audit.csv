@@ -1,0 +1,7 @@
+engine,median_abs_rel_diff,p95_abs_rel_diff,max_abs_rel_diff,n_tensors,reference
+int8_entropy_natural_s1,0.0,0.0,0.0,132,int8_entropy_natural_s1
+int8_entropy_no_print_s1,0.0027330818765919944,0.19503097985218448,0.4990253141627716,132,int8_entropy_natural_s1
+int8_entropy_no_replay_s1,0.0029393891189679446,0.15645361196433022,0.6938911029261622,132,int8_entropy_natural_s1
+int8_entropy_natural_s2,0.0,0.0,0.0,132,int8_entropy_natural_s2
+int8_entropy_no_print_s2,0.001952750094857114,0.11061353851983813,0.33892471018577136,132,int8_entropy_natural_s2
+int8_entropy_no_replay_s2,0.002591588910517951,0.1733747385422183,0.3296702791269547,132,int8_entropy_natural_s2

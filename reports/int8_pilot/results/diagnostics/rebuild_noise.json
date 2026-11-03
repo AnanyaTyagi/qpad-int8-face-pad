@@ -1,0 +1,25 @@
+{
+  "n_builds": 3,
+  "max_score_movement": 0.032921329178676295,
+  "videos_with_decision_flip": 5,
+  "metric_movement_pp": {
+    "print_apcer": 0.5555555555555555,
+    "replay_apcer": 0.8333333333333331,
+    "apcer_pooled": 0.6944444444444448,
+    "bpcer": 0.0,
+    "acer": 0.3472222222222224
+  },
+  "exceeds_limit": true,
+  "limit_pp": 0.5,
+  "engine_sha256": [
+    "5ddd86f7a8ba2365dd1d57a4a3a623e6d9b9b75f879c145cc0511138133eda47",
+    "abbaedbd3b0391b42393cb992550eb1a6f7f54b3a7440b2d0afbfdd623a51c44",
+    "0fe1bddeec19345409c68da305f9809c8dd7f0958587f1a9ec5e4ee0a5a6b069"
+  ],
+  "identical_engines": false,
+  "thresholds": [
+    0.7297600280797603,
+    0.7405650503857404,
+    0.7283725684318616
+  ]
+}

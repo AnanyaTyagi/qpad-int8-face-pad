@@ -1,0 +1,7 @@
+engine,method,calibration_images,batches_served,scaled_tensors,tensorrt,gpu,build_seconds,sha256,ok
+int8_entropy_natural_s1,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,307.2,899cff61069d,True
+int8_entropy_no_print_s1,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,292.4,af605c0761ce,True
+int8_entropy_no_replay_s1,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,266.1,38fc3e5db7bd,True
+int8_entropy_natural_s2,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,271.5,0d24665a170d,True
+int8_entropy_no_print_s2,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,276.5,b6ad920f448c,True
+int8_entropy_no_replay_s2,entropy,600,30,132,10.16.1.11,NVIDIA A100-SXM4-40GB,266.9,07fe3ab62ce8,True

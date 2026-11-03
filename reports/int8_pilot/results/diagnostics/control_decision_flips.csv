@@ -1,0 +1,3 @@
+comparison,policy,attack_rejected_to_accepted,attack_accepted_to_rejected,bona_fide_accepted_to_rejected,bona_fide_rejected_to_accepted,n_videos
+control bona_fide_only vs natural s1,B,24,0,0,6,1080
+control tiny_natural vs natural s1,B,12,3,0,3,1080

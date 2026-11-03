@@ -1,0 +1,4 @@
+engine,median_abs_rel_diff,p95_abs_rel_diff,max_abs_rel_diff,n_tensors
+control_bona_fide_only,0.05558583780923864,0.29153159936903217,0.7820792451756426,132
+control_tiny_natural,0.07210677825829914,0.2603976409462706,0.6936079554203499,132
+int8_entropy_natural_s1,0.0,0.0,0.0,132
