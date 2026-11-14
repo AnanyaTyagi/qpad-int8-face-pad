@@ -1,0 +1,127 @@
+{
+  "policy_A": {
+    "acer": 0.029166666666666667,
+    "acer_max_pai": 0.044444444444444446,
+    "apcer_max_pai": {
+      "errors": 24,
+      "percent": 6.666666666666667,
+      "rate": 0.06666666666666667,
+      "text": "24/360 = 6.67%",
+      "total": 360
+    },
+    "apcer_pooled": {
+      "errors": 26,
+      "percent": 3.6111111111111107,
+      "rate": 0.03611111111111111,
+      "text": "26/720 = 3.61%",
+      "total": 720
+    },
+    "auroc": 0.9971412037037037,
+    "bpcer": {
+      "errors": 8,
+      "percent": 2.2222222222222223,
+      "rate": 0.022222222222222223,
+      "text": "8/360 = 2.22%",
+      "total": 360
+    },
+    "confusion": {
+      "bona_fide_accepted": 352,
+      "bona_fide_rejected": 8,
+      "print_accepted": 2,
+      "print_rejected": 358,
+      "replay_accepted": 24,
+      "replay_rejected": 336
+    },
+    "eer": {
+      "apcer_at_eer": 0.027777777777777776,
+      "bpcer_at_eer": 0.027777777777777776,
+      "note": "EER computed on this split's own scores (descriptive; not used for any decision)",
+      "threshold_on_this_set": 0.7793887635198783,
+      "value": 0.027777777777777776
+    },
+    "n_videos": 1080,
+    "print_apcer": {
+      "errors": 2,
+      "percent": 0.5555555555555556,
+      "rate": 0.005555555555555556,
+      "text": "2/360 = 0.56%",
+      "total": 360
+    },
+    "replay_apcer": {
+      "errors": 24,
+      "percent": 6.666666666666667,
+      "rate": 0.06666666666666667,
+      "text": "24/360 = 6.67%",
+      "total": 360
+    },
+    "threshold": 0.7317014196036492
+  },
+  "policy_B": {
+    "acer": 0.03819444444444444,
+    "acer_max_pai": 0.05972222222222222,
+    "apcer_max_pai": {
+      "errors": 41,
+      "percent": 11.38888888888889,
+      "rate": 0.11388888888888889,
+      "text": "41/360 = 11.39%",
+      "total": 360
+    },
+    "apcer_pooled": {
+      "errors": 51,
+      "percent": 7.083333333333333,
+      "rate": 0.07083333333333333,
+      "text": "51/720 = 7.08%",
+      "total": 720
+    },
+    "auroc": 0.9971412037037037,
+    "bpcer": {
+      "errors": 2,
+      "percent": 0.5555555555555556,
+      "rate": 0.005555555555555556,
+      "text": "2/360 = 0.56%",
+      "total": 360
+    },
+    "confusion": {
+      "bona_fide_accepted": 358,
+      "bona_fide_rejected": 2,
+      "print_accepted": 10,
+      "print_rejected": 350,
+      "replay_accepted": 41,
+      "replay_rejected": 319
+    },
+    "eer": {
+      "apcer_at_eer": 0.027777777777777776,
+      "bpcer_at_eer": 0.027777777777777776,
+      "note": "EER computed on this split's own scores (descriptive; not used for any decision)",
+      "threshold_on_this_set": 0.7793887635198783,
+      "value": 0.027777777777777776
+    },
+    "n_videos": 1080,
+    "print_apcer": {
+      "errors": 10,
+      "percent": 2.7777777777777777,
+      "rate": 0.027777777777777776,
+      "text": "10/360 = 2.78%",
+      "total": 360
+    },
+    "replay_apcer": {
+      "errors": 41,
+      "percent": 11.38888888888889,
+      "rate": 0.11388888888888889,
+      "text": "41/360 = 11.39%",
+      "total": 360
+    },
+    "threshold": 0.5660095516212132
+  },
+  "threshold_A_fp32": 0.7317014196036492,
+  "threshold_B_engine": {
+    "acer": 0.007407407407407408,
+    "apcer": 0.007407407407407408,
+    "apcer_errors": 4,
+    "bpcer": 0.007407407407407408,
+    "bpcer_errors": 2,
+    "n_attacks": 540,
+    "n_bona_fide": 270,
+    "threshold": 0.5660095516212132
+  }
+}

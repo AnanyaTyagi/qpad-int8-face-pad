@@ -50,6 +50,28 @@ diagnostics:
     bona_fide_only: {bona_fide: 120, print: 0, replay: 0}
     tiny_natural:   {bona_fide: 2, print: 1, replay: 1}     # 4 videos x 5 frames = 20 images = one batch
 
+# One-factor ablation (notebooks 08 and 08b), replacing the 35-engine design after the pilot review:
+# change one thing at a time from natural (600 images, 67% attack images) and find where results get worse.
+# Videos per class, 5 frames each. Within a seed the sets are nested (smaller = prefix of larger).
+ablation:
+  seeds: [1, 2, 3]
+  baseline: natural
+  settings:
+    natural:   {bona_fide: 40,  print: 40, replay: 40}   # 600 images, 67% attack (same mix as the pilot)
+    attack40:  {bona_fide: 72,  print: 24, replay: 24}   # 600 images, 40% attack
+    attack20:  {bona_fide: 96,  print: 12, replay: 12}   # 600 images, 20% attack
+    attack10:  {bona_fide: 108, print: 6,  replay: 6}    # 600 images, 10% attack
+    attack0:   {bona_fide: 120, print: 0,  replay: 0}    # 600 images, 0% attack (s1 = 07c bona_fide_only)
+    images200: {bona_fide: 13,  print: 14, replay: 13}   # 200 images, 67.5% attack (40 videos cannot split 1:1:1)
+    images60:  {bona_fide: 4,   print: 4,  replay: 4}    # 60 images, 67% attack
+    images20:  {bona_fide: 2,   print: 1,  replay: 1}    # 20 images, 50% attack (4 videos; s1 = 07c tiny_natural)
+  lines:
+    attack_share: [natural, attack40, attack20, attack10, attack0]
+    images: [natural, images200, images60, images20]
+  # Threshold rules reported for every engine: A = fixed FP32 threshold, B = engine's own dev EER (kept for
+  # comparison), C = engine's own dev threshold that rejects at most this share of dev bona fide videos.
+  bpcer_targets: [0.10, 0.15]
+
 rebuild_noise:
   condition: natural
   seed: 1

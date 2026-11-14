@@ -121,16 +121,12 @@ def build_calibration_manifest(paths: ProjectPaths, cfgs: Mapping[str, Any], dry
 
     icfg = cfgs["int8"]
     out = output_paths(paths, dry_run)
-    store = materialize(processed_split_dir(paths, dry_run, "train"), "train", "calib", out.local_cache)
-    if set(store.index["split"]) != {"train"}:
-        raise RuntimeError("calibration frames must come from the training split only")
+    store = train_calibration_store(paths, dry_run)
     vids = video_index(store)
     conds = {c: icfg["conditions"][c] for c in conditions}
     fpv = int(icfg["calibration_budget"]["frames_per_video"])
-    if dry_run:
-        # The dry-run crops hold only a few videos per class: shrink every mixture (each class count / 40,
-        # rounded up) so the plumbing runs end to end. These engines are meaningless by construction.
-        conds = {name: {c: -(-int(k) // 40) for c, k in comp.items()} for name, comp in conds.items()}
+    if dry_run:   # shrunken mixtures so the plumbing runs end to end; these engines are meaningless
+        conds = shrink_for_dry_run(conds)
         sel = pd.concat([nested_calibration_sets(vids, {name: comp}, seeds, sum(comp.values()))
                          for name, comp in conds.items()], ignore_index=True)
         man = attach_calibration_frames(sel, store.index, fpv)
@@ -140,6 +136,20 @@ def build_calibration_manifest(paths: ProjectPaths, cfgs: Mapping[str, Any], dry
         if (man.groupby(["seed", "condition"]).size() != int(icfg["calibration_budget"]["images"])).any():
             raise RuntimeError("calibration image budget violated")
     path = out.results / "int8" / "calibration_manifest.csv"
+    return save_manifest(path, man), store, path
+
+
+def train_calibration_store(paths: ProjectPaths, dry_run: bool) -> FrameStore:
+    """Saved calibration frames (role CALIB) of the training split."""
+    out = output_paths(paths, dry_run)
+    store = materialize(processed_split_dir(paths, dry_run, "train"), "train", "calib", out.local_cache)
+    if set(store.index["split"]) != {"train"}:
+        raise RuntimeError("calibration frames must come from the training split only")
+    return store
+
+
+def save_manifest(path: Path, man: pd.DataFrame) -> pd.DataFrame:
+    """Write a calibration manifest, keeping saved (seed, condition) sets and refusing to change any of them."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_file():
         old = pd.read_csv(path, dtype={"video_id": str})
@@ -160,7 +170,34 @@ def build_calibration_manifest(paths: ProjectPaths, cfgs: Mapping[str, Any], dry
         merged = pd.concat([old, man]).drop_duplicates(["seed", "condition", "video_id", "frame_idx"])
         man = merged.sort_values(["seed", "condition", "class", "rank_in_class", "frame_idx"]).reset_index(drop=True)
     man.to_csv(path, index=False)
-    return man, store, path
+    return man
+
+
+def shrink_for_dry_run(mixes: Mapping[str, Mapping[str, int]]) -> dict[str, dict[str, int]]:
+    """Dry-run crops hold only a few videos per class: each class count / 40, rounded up."""
+    return {name: {c: -(-int(k) // 40) for c, k in comp.items()} for name, comp in mixes.items()}
+
+
+def build_ablation_manifest(paths: ProjectPaths, cfgs: Mapping[str, Any], dry_run: bool, seeds: Sequence[int],
+                            settings: Sequence[str]) -> tuple[pd.DataFrame, FrameStore, Path]:
+    """Calibration sets of the one-factor ablation (each setting has its own video budget).
+
+    Same nested sampling as the pilot: for one seed every class list is shuffled once, so a
+    smaller set is a prefix of a larger one and the 67% / 600-image set equals the pilot's natural set.
+    """
+    from .calibration import attach_calibration_frames, nested_calibration_sets
+
+    icfg = cfgs["int8"]
+    mixes = {s: icfg["ablation"]["settings"][s] for s in settings}
+    if dry_run:
+        mixes = shrink_for_dry_run(mixes)
+    store = train_calibration_store(paths, dry_run)
+    vids = video_index(store)
+    sel = pd.concat([nested_calibration_sets(vids, {name: mix}, seeds, sum(mix.values()))
+                     for name, mix in mixes.items()], ignore_index=True)
+    man = attach_calibration_frames(sel, store.index, int(icfg["calibration_budget"]["frames_per_video"]))
+    path = output_paths(paths, dry_run).results / "int8" / "ablation" / "calibration_manifest.csv"
+    return save_manifest(path, man), store, path
 
 
 def calibration_array(store: FrameStore, manifest: pd.DataFrame, seed: int, condition: str,

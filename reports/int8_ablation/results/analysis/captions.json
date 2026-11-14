@@ -1,0 +1,4 @@
+{
+  "ablation_attack_share": "Test error rates of the INT8 engines along the attack share line; each dot is one seed, the bar its min\u2013max range, colors are threshold rules set on the development set.",
+  "ablation_images": "Test error rates of the INT8 engines along the images line; each dot is one seed, the bar its min\u2013max range, colors are threshold rules set on the development set."
+}

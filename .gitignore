@@ -46,3 +46,4 @@ reports/checkpoint1/*.synctex.gz
 # reports/**/figures/*.pdf (aggregate plots only), requirements*.txt
 # ...except the INT8 pilot per-video scores (IDs and scores only), shared with the instructor
 !reports/int8_pilot/results/**/*_video_scores.csv
+!reports/int8_ablation/results/**/*_video_scores.csv

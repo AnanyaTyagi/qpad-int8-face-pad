@@ -1047,12 +1047,240 @@ if CONTROLS:
     display(CONTROL_SCALES)
 else:
     print("dry run: positive controls are built in the full run only")
-'''), footer("08_full_int8_experiment.ipynb")]
+'''), footer("08_int8_ablation.ipynb")]
     notebook("07c_pilot_diagnostics_gpu.ipynb", cells)
 
 
+def nb08():
+    cells = [header(
+        "08 · INT8 calibration ablation: one factor at a time (24 engines)",
+        "Starting from the natural calibration set (600 images, 67% attack images), change one factor at a time and "
+        "build each setting with 3 seeds: attack share 67/40/20/10/0% at 600 images, and 600/200/60/20 images.",
+        "The pilot found almost no difference between calibration mixes, and the professor's review traced most of the "
+        "spread to the per-engine threshold. Here we push one factor much further than the pilot did, to find where "
+        "results start to get worse. Each setting is built 3 times with different random video picks, so we can "
+        "compare ranges instead of single engines. This notebook only builds and scores engines; 08b analyses them.",
+        ["Passed `equivalence.json`; ONNX model; processed train calibration frames; dev/test evaluation frames; "
+         "FP32 `threshold.json`. Same GPU type and TensorRT version as the pilot (notebook 07)."],
+        ["`QPAD_Project/results/int8/ablation/calibration_manifest.csv` (saved before any engine)",
+         "`QPAD_Project/engines/ablation/int8_entropy_<setting>_s<seed>/` (engine, cache, scales, metadata)",
+         "`QPAD_Project/results/int8/ablation/int8_entropy_<setting>_s<seed>/` (dev/test scores, metrics)",
+         "`QPAD_Project/results/int8/ablation/engines.csv`"],
+        "1 (follow-up to the pilot review)")]
+    cells += setup("nb08", '''DRY_RUN_EVAL_VIDEOS_PER_CLASS = 3   # dry run: one engine (natural, seed 1), evaluated on 3 videos/class/split
+ALLOW_OTHER_GPU = False   # True: run the whole ablation on a different GPU than the pilot (e.g. L4 instead of A100)''')
+    cells += [TRT_INSTALL, code('''
+import json, torch, pandas as pd
+from qpad.ablation import settings_table
+from qpad.experiments import engine_tag
+from qpad.pipeline import find_input
+if not torch.cuda.is_available():
+    raise RuntimeError("INT8 TensorRT engines need a CUDA GPU runtime.")
+icfg, acfg = cfgs["int8"], cfgs["int8"]["ablation"]
+METHOD = icfg["calibration_method"]["primary"]   # pre-registered: entropy
+BATCH = int(icfg["calibration_method"]["calibration_batch_size"])
+SETTINGS_TABLE = settings_table(acfg, int(icfg["calibration_budget"]["frames_per_video"]), BATCH)
+display(SETTINGS_TABLE)
+SEEDS = acfg["seeds"][:1] if DRY_RUN else list(acfg["seeds"])
+SETTINGS = [acfg["baseline"]] if DRY_RUN else list(SETTINGS_TABLE["setting"])
+print("method:", METHOD, "| seeds:", SEEDS, "| settings:", SETTINGS, "| engines:", len(SEEDS) * len(SETTINGS))
+# Engines are only comparable on the same GPU type and TensorRT version (kernel choice differs between GPUs).
+pilot_meta = find_input(paths, DRY_RUN, "engines", engine_tag(METHOD, "natural", 1)) / "engine_meta.json"
+if pilot_meta.is_file():
+    pilot_hw = json.loads(pilot_meta.read_text())["hardware"]
+    if (pilot_hw["gpu_name"], pilot_hw["tensorrt"]) != (HW["gpu_name"], HW["tensorrt"]):
+        msg = (f"Pilot engines were built on {pilot_hw['gpu_name']} with TensorRT {pilot_hw['tensorrt']}, "
+               f"this runtime has {HW['gpu_name']} with TensorRT {HW['tensorrt']}.")
+        if not ALLOW_OTHER_GPU:
+            raise RuntimeError(msg + " Use the same GPU type, or set ALLOW_OTHER_GPU = True to build the whole "
+                               "ablation on this one.")
+        print("WARNING:", msg, "The ablation settings are compared with each other, not with the pilot engines.")
+else:
+    print("pilot engine metadata not found; GPU type not compared")
+# Every ablation engine must come from one GPU type and TensorRT version.
+built = {(m["hardware"]["gpu_name"], m["hardware"]["tensorrt"])
+         for m in (json.loads(p.read_text()) for p in (OUT.engines / "ablation").glob("*/engine_meta.json"))}
+if built - {(HW["gpu_name"], HW["tensorrt"])}:
+    raise RuntimeError(f"Ablation engines already exist from {sorted(built)}; finish the run on that GPU type.")
+'''), code('''
+from qpad.experiments import build_ablation_manifest
+CAL, CAL_STORE, CAL_PATH = build_ablation_manifest(paths, cfgs, DRY_RUN, SEEDS, SETTINGS)
+print("calibration manifest saved BEFORE building engines:", CAL_PATH)
+counts = CAL.groupby(["seed", "condition", "class"]).size().unstack(fill_value=0)
+counts["images"] = counts.sum(axis=1)
+display(counts)
+'''), code('''
+from qpad.data_exceptions import expected_eval_counts
+from qpad.datasets import materialize
+from qpad.experiments import balanced_subset, build_int8_engine, calibration_array, engine_is_complete, evaluate_backend
+from qpad.pipeline import processed_split_dir
+from qpad.tensorrt_utils import TrtRunner
+norm = cfgs["preprocessing"]["normalization"]
+nfr = expected_eval_counts(cfgs)
+n_eval = DRY_RUN_EVAL_VIDEOS_PER_CLASS if DRY_RUN else None
+DEV = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "dev"), "dev", "eval", OUT.local_cache), n_eval)
+TEST = balanced_subset(materialize(processed_split_dir(paths, DRY_RUN, "test"), "test", "eval", OUT.local_cache), n_eval)
+FP32_THR = json.loads(find_input(paths, DRY_RUN, "results", "fp32/threshold.json").read_text())["threshold"]
+ABL_ENGINES, ABL_RESULTS = OUT.engines / "ablation", OUT.results / "int8" / "ablation"
+preflight("INT8 ablation engines", len(SEEDS) * len(SETTINGS), [OUT.models / "deeppixbis_fp32.onnx", CAL_PATH],
+          [ABL_ENGINES, ABL_RESULTS], LOCAL_WORK_ROOT, {"method": METHOD, **icfg["tensorrt"]}, SEEDS, DRY_RUN,
+          "~4-7 min per engine (build + scoring); finished engines are skipped if the session restarts")
+'''), md("## Build and score the engines\n"
+         "Seed by seed, so an interrupted session still leaves complete seeds. Finished engines are verified by hash "
+         "and skipped on a rerun. Only policy A (fixed FP32 threshold) is printed here; 08b adds the other rules."), code('''
+for seed in SEEDS:
+    for setting in SETTINGS:
+        tag = f"ablation/{engine_tag(METHOD, setting, seed)}"
+        edir, rdir = OUT.engines / tag, OUT.results / "int8" / tag
+        if engine_is_complete(edir, rdir) and not FORCE_REBUILD:
+            print("verified, skipping", tag)
+        else:
+            images = calibration_array(CAL_STORE, CAL, seed, setting, norm)
+            build_int8_engine(paths, cfgs, DRY_RUN, images, tag, METHOD)
+            evaluate_backend(TrtRunner(edir / "engine.plan"), DEV, TEST, norm, FP32_THR, rdir, nfr,
+                             int(icfg["tensorrt"]["opt_batch"]))
+        m = json.loads((rdir / "metrics.json").read_text())["policy_A"]
+        print(tag, "| A: print", m["print_apcer"]["text"], "| replay", m["replay_apcer"]["text"], "| BPCER", m["bpcer"]["text"])
+'''), md("## Did every engine see its whole calibration set?\n"
+         "Each engine should have received images / 20 batches and written one scale per calibrated tensor."), code('''
+rows = []
+for seed in SEEDS:
+    for setting in SETTINGS:
+        tag = f"ablation/{engine_tag(METHOD, setting, seed)}"
+        meta = json.loads((OUT.engines / tag / "engine_meta.json").read_text())
+        images = int(meta["n_calibration_images"])
+        rows.append({"setting": setting, "seed": seed, "images": images, "batches_served": meta["calibration_batches_served"],
+                     "expected_batches": images // BATCH, "scaled_tensors": meta["n_scaled_tensors"],
+                     "gpu": meta["hardware"]["gpu_name"], "tensorrt": meta["hardware"]["tensorrt"],
+                     "sha256": meta["sha256"][:12]})
+ENGINES = pd.DataFrame(rows)
+ENGINES["ok"] = (ENGINES["batches_served"] == ENGINES["expected_batches"]) & \\
+                (ENGINES["scaled_tensors"] == ENGINES["scaled_tensors"].mode().iloc[0])
+ENGINES.to_csv(ABL_RESULTS / "engines.csv", index=False)
+display(ENGINES)
+print("engines with their full calibration set:", f"{int(ENGINES['ok'].sum())}/{len(ENGINES)}")
+'''), footer("08b_int8_ablation_analysis.ipynb")]
+    notebook("08_int8_ablation.ipynb", cells)
+
+
+def nb08b():
+    cells = [header(
+        "08b · INT8 ablation analysis (no GPU)",
+        "Evaluate every ablation engine under four threshold rules and compare the seed ranges of each setting with "
+        "the natural setting.",
+        "For each engine we read the saved dev and test video scores. Thresholds come only from the development set: "
+        "A is the fixed FP32 threshold, B the engine's own EER point (kept for comparison), C the engine's own "
+        "threshold that rejects 10% or 15% of real dev faces. A setting probably differs from natural when its range "
+        "over the 3 seeds does not overlap natural's range.",
+        ["Notebook 08 outputs: `results/int8/ablation/int8_entropy_<setting>_s<seed>/`; FP32 results `results/fp32/`; "
+         "optionally the pilot results `results/int8/int8_entropy_natural_s<seed>/`."],
+        ["`QPAD_Project/results/int8/ablation/analysis/` (`ablation_metrics.csv`, `ablation_ranges.csv`, "
+         "`ablation_thresholds.csv`, `ablation_score_shifts.csv`, `pilot_vs_ablation_natural.csv`, and one figure "
+         "per ablation line: `ablation_attack_share.png/.pdf`, `ablation_images.png/.pdf`)"],
+        "1 (follow-up to the pilot review; reads only)")]
+    cells += setup("nb08b")
+    cells += [code('''
+import json, pandas as pd
+from qpad import ablation as AB
+from qpad.experiments import engine_tag
+from qpad.pipeline import find_input
+icfg, acfg = cfgs["int8"], cfgs["int8"]["ablation"]
+METHOD = icfg["calibration_method"]["primary"]
+TARGETS = [float(t) for t in acfg["bpcer_targets"]]
+BASELINE = acfg["baseline"]
+SETTINGS_TABLE = AB.settings_table(acfg, int(icfg["calibration_budget"]["frames_per_video"]),
+                                   int(icfg["calibration_method"]["calibration_batch_size"]))
+RESULT_DIRS, MISSING = {}, []
+for setting in SETTINGS_TABLE["setting"]:
+    for seed in acfg["seeds"]:
+        d = find_input(paths, DRY_RUN, "results", f"int8/ablation/{engine_tag(METHOD, setting, seed)}")
+        if (d / "metrics.json").is_file():
+            RESULT_DIRS[(setting, seed)] = d
+        else:
+            MISSING.append(f"{setting} s{seed}")
+print(f"engines with results: {len(RESULT_DIRS)}; missing: {MISSING or 'none'}")
+if not RESULT_DIRS:
+    raise FileNotFoundError("no ablation results found; run notebook 08 first")
+FP32_DIR = find_input(paths, DRY_RUN, "results", "fp32")
+ANALYSIS = OUT.results / "int8" / "ablation" / "analysis"
+ANALYSIS.mkdir(parents=True, exist_ok=True)
+print("writing to:", ANALYSIS)
+'''), md("## 1. Threshold rules\n"
+         "Each engine's thresholds under every rule, with the range over seeds. The pilot's EER thresholds (rule B) "
+         "jumped between 0.51 and 0.76; the C rules use the 27th or 40th lowest real-face dev score instead of one "
+         "borderline video, so they should move much less."), code('''
+LONG = AB.collect(RESULT_DIRS, TARGETS)
+LONG.to_csv(ANALYSIS / "ablation_metrics.csv", index=False)
+fp32_thr = json.loads((FP32_DIR / "threshold.json").read_text())["threshold"]
+FP32_RULES = AB.rule_metrics(AB.read_videos(FP32_DIR, "dev"), AB.read_videos(FP32_DIR, "test"),
+                             {"A_fp32": fp32_thr, "B_dev_eer": fp32_thr}, TARGETS)
+print("FP32 reference (same rules on the FP32 model):")
+display(FP32_RULES[["rule", "threshold", "print_apcer_errors", "replay_apcer_errors", "bpcer_errors", "acer_pct"]])
+THRESHOLDS = LONG.pivot_table(index=["setting", "seed"], columns="rule", values="threshold")
+THRESHOLDS.to_csv(ANALYSIS / "ablation_thresholds.csv")
+display(THRESHOLDS.round(4))
+print("Spread of the threshold over all engines (max - min):", (THRESHOLDS.max() - THRESHOLDS.min()).round(4).to_dict())
+'''), md("## 2. Seed ranges per setting\n"
+         "Min–max over seeds of the test error rates (%) under rules A, C10 and C15. `*` marks a range that does not "
+         "overlap the natural setting's range. With 3 seeds this is a screening rule, not a significance test."), code('''
+RANGES = AB.setting_ranges(LONG, BASELINE)
+RANGES.to_csv(ANALYSIS / "ablation_ranges.csv", index=False)
+MAIN_RULES = ["A_fp32", *[AB.bpcer_rule(t) for t in TARGETS]]
+for rule in MAIN_RULES + ["B_dev_eer"]:
+    print(AB.RULE_LABELS.get(rule, rule))
+    display(AB.range_text(RANGES, [rule], ["print_apcer_pct", "replay_apcer_pct", "bpcer_pct"])
+            .reindex(SETTINGS_TABLE["setting"]).dropna(how="all"))
+'''), md("## 3. Figures: where do results start to get worse?"), code('''
+for line, levels in acfg["lines"].items():
+    present = [s for s in levels if any(k[0] == s for k in RESULT_DIRS)]
+    if present:
+        print(AB.fig_ablation_line(LONG, SETTINGS_TABLE, line, present, MAIN_RULES, ANALYSIS, f"ablation_{line}")["png"])
+'''), md("## 4. Score changes against natural (no threshold)\n"
+         "Mean change of the test video scores against the natural engine of the same seed. A positive mean on attacks "
+         "means attacks look more like real faces. This does not depend on any threshold."), code('''
+SHIFTS = AB.score_shifts_vs_baseline(RESULT_DIRS, BASELINE)
+if len(SHIFTS):
+    SHIFTS.to_csv(ANALYSIS / "ablation_score_shifts.csv", index=False)
+    display(SHIFTS.groupby(["setting", "class"])[["mean_delta", "mean_abs_delta", "max_abs_delta"]]
+            .agg(["min", "max"]).round(4).reindex(SETTINGS_TABLE["setting"], level=0))
+else:
+    print("only the baseline is available (dry run)")
+'''), md("## 5. Natural engines of this run against the pilot's\n"
+         "Natural seeds 1 and 2 use exactly the pilot's calibration images, so these pairs are rebuilds. Their "
+         "difference is the noise floor that any ablation effect has to exceed. If the ablation ran on a different "
+         "GPU than the pilot, the difference also includes the GPU change."), code('''
+from qpad import diagnostics as D
+PAIRS = []
+for seed in acfg["seeds"]:
+    tag = engine_tag(METHOD, BASELINE, seed)
+    try:   # the pilot built only some seeds (natural s1, s2)
+        pilot = find_input(paths, DRY_RUN, "results", f"int8/{tag}")
+    except FileNotFoundError:
+        continue
+    if (pilot / "metrics.json").is_file() and (BASELINE, seed) in RESULT_DIRS:
+        metas = [find_input(paths, DRY_RUN, "engines", t) / "engine_meta.json" for t in (tag, f"ablation/{tag}")]
+        gpus = sorted({json.loads(m.read_text())["hardware"]["gpu_name"] for m in metas if m.is_file()})
+        note = f" (different GPUs: {' vs '.join(gpus)})" if len(gpus) > 1 else ""
+        PAIRS.append((f"pilot vs ablation natural s{seed}{note}", pilot, RESULT_DIRS[(BASELINE, seed)]))
+if PAIRS:
+    SHIFT_P, FLIPS_P = D.compare_pairs(PAIRS, "A")
+    SHIFT_P.to_csv(ANALYSIS / "pilot_vs_ablation_natural.csv", index=False)
+    display(SHIFT_P)
+    display(FLIPS_P)
+else:
+    print("no pilot engine with the same seed found")
+'''), code('''
+CLEAR = RANGES[RANGES["separated"] & RANGES["rule"].isin(MAIN_RULES)
+               & RANGES["metric"].isin(["print_apcer_pct", "replay_apcer_pct", "bpcer_pct"])]
+print("Settings whose seed range is clear of natural's (rules A and C):")
+print(CLEAR[["rule", "setting", "metric", "min", "max", "baseline_min", "baseline_max", "direction"]]
+      .round(2).to_string(index=False) if len(CLEAR) else "none")
+'''), md("This is the last notebook of the ablation.")]
+    notebook("08b_int8_ablation_analysis.ipynb", cells)
+
+
 def main() -> None:
-    for f in (nb00, nb01, nb02, nb03, nb04, nb05, nb06, nb07, nb07b, nb07c):
+    for f in (nb00, nb01, nb02, nb03, nb04, nb05, nb06, nb07, nb07b, nb07c, nb08, nb08b):
         f()
     print("notebooks written to", NB_DIR)
 

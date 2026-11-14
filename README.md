@@ -29,7 +29,8 @@ than the INT8 model calibrated on the natural mixture.
 | Export validation (06) | **Measured** (Colab A100, TensorRT 10.16.1.11): PyTorch vs ONNX max frame-score difference 9.1e-7, ONNX vs TensorRT FP32 3.8e-7 on 16,200 development frames; passed. |
 | INT8 calibration pilot (07) | **Measured**: six entropy-calibrated engines (natural / no_print / no_replay × seeds 1, 2). Unusual vs natural calibration changed test print or replay APCER by at most 3 of 360 videos. |
 | Pilot diagnostics (07b, 07c) | **Measured** (Colab A100, 2026-10-30). Executed notebooks and control metrics in [`reports/int8_pilot/`](reports/int8_pilot/). 63 of 68 compute layers run in INT8; the spread between engines comes mainly from the per-engine dev-EER threshold. |
-| Full INT8 experiment, statistics, latency (08–10) | Not yet in this repository; the next step depends on the pilot decision. |
+| INT8 ablation (08, 08b) | **Measured** (Colab L4, 2026-11-12). 24 engines; executed notebooks and results in [`reports/int8_ablation/`](reports/int8_ablation/). At the fixed FP32 threshold no setting separates from natural over 3 seeds; the attack-free degradation appears only under the per-engine dev-EER threshold. |
+| Statistics and latency | Not yet in this repository. |
 
 **Checkpoint 1 report:** [`reports/checkpoint1/checkpoint1.pdf`](reports/checkpoint1/checkpoint1.pdf)
 (LaTeX source `checkpoint1.tex`; every number comes from `reports/checkpoint1/tables/generated_values.tex`,
@@ -105,6 +106,8 @@ agreement (Boulkenafet et al., FG 2017); our copy was provided by the course ins
 | 07 | `07_int8_calibration_pilot` | 1 | yes + TensorRT | `results/int8/calibration_manifest.csv`, 6 engines with scales, `results/int8/<engine>/metrics.json`, `pilot_summary.csv` |
 | 07b | `07b_pilot_diagnostics_saved_results` | 1 | no | calibration completeness, threshold margins, score shifts, decision flips, scale changes by block |
 | 07c | `07c_pilot_diagnostics_gpu` | 1 | yes + TensorRT | per-layer INT8/FP32 precision, rebuild noise, two positive-control engines |
+| 08 | `08_int8_ablation` | 1 | yes + TensorRT (same GPU as 07) | one-factor ablation: 8 settings (attack share 67/40/20/10/0% at 600 images; 600/200/60/20 images) × 3 seeds = 24 engines in `results/int8/ablation/` |
+| 08b | `08b_int8_ablation_analysis` | 1 | no | threshold rules A (FP32), B (dev EER), C (dev BPCER 10%/15%); seed ranges vs natural, score shifts, figures in `results/int8/ablation/analysis/` |
 
 Gates that require a deliberate manual change: `DRY_RUN = False` (all), `FREEZE_CHECKPOINT = True` (04),
 `CONFIRM_THRESHOLD_FROZEN = True` (05). Notebooks 06–07 install the pinned TensorRT version

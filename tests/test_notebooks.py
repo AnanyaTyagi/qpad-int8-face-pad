@@ -14,9 +14,9 @@ NOTEBOOKS = sorted(NB_DIR.glob("*.ipynb"))
 ALLOWED_DRIVE = ("/content/drive/MyDrive/QPAD_Project", "/content/drive\"")
 
 
-def test_notebooks_00_to_07c_exist():
+def test_notebooks_00_to_08b_exist():
     names = [p.name for p in NOTEBOOKS]
-    assert len(names) == 10 and names[0].startswith("00_") and names[-1].startswith("07c_")
+    assert len(names) == 12 and names[0].startswith("00_") and names[-1].startswith("08b_")
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)

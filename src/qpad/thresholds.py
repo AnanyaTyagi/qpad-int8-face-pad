@@ -88,3 +88,21 @@ def select_eer_threshold(scores: np.ndarray, is_bona_fide: np.ndarray) -> tuple[
     res = ThresholdResult(float(best["threshold"]), int(best["apcer_errors"]), int(best["n_attacks"]),
                           int(best["bpcer_errors"]), int(best["n_bona_fide"]))
     return res, t
+
+
+def select_bpcer_threshold(scores: np.ndarray, is_bona_fide: np.ndarray, target_bpcer: float
+                           ) -> tuple[ThresholdResult, pd.DataFrame]:
+    """Highest threshold whose development BPCER is at most ``target_bpcer`` (e.g. 0.10).
+
+    Set by the ``floor(target * n_bona_fide)``-th lowest bona fide score, so it does not
+    depend on a single borderline video the way the EER point does on a well-separated set.
+    """
+    if not 0 <= target_bpcer < 1:
+        raise ValueError("target_bpcer must be in [0, 1)")
+    t = threshold_table(scores, is_bona_fide)
+    allowed = int(np.floor(target_bpcer * int(t["n_bona_fide"].iloc[0]) + 1e-9))
+    best = t[t["bpcer_errors"] <= allowed].sort_values("threshold", kind="mergesort").iloc[-1]
+    t["selected"] = t.index == best.name
+    res = ThresholdResult(float(best["threshold"]), int(best["apcer_errors"]), int(best["n_attacks"]),
+                          int(best["bpcer_errors"]), int(best["n_bona_fide"]))
+    return res, t
